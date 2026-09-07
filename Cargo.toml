@@ -1,0 +1,37 @@
+[package]
+name = "alkis-proxy"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+description = "Bundesweiter ALKIS-Flurstücksdienst: vereinheitlicht die WFS der 16 Bundesländer hinter einer OGC-API-Features-Schnittstelle"
+license = "MIT"
+
+[dependencies]
+# Laufzeit
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["trace", "compression-gzip", "timeout"] }
+
+# Upstream-Zugriff — rustls statt OpenSSL, damit das Image statisch bleibt
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip"] }
+
+# Parsen und Serialisieren
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+quick-xml = "0.37"
+
+# Cache
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "aio"] }
+deadpool-redis = "0.18"
+zstd = "0.13"
+
+# Diagnose
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
