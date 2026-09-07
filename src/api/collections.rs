@@ -9,7 +9,7 @@ use axum::http::HeaderMap;
 use axum::Json;
 use serde_json::{json, Value};
 
-use crate::api::{base_url, SharedState};
+use crate::api::{base_url, SharedState, TypedJson, SCHEMA_JSON};
 use crate::config::states;
 
 pub async fn landing(State(state): State<SharedState>, headers: HeaderMap) -> Json<Value> {
@@ -22,7 +22,11 @@ pub async fn landing(State(state): State<SharedState>, headers: HeaderMap) -> Js
             { "rel": "root", "type": "application/json", "title": "Startseite", "href": base.clone() },
             { "rel": "conformance", "type": "application/json", "title": "Konformitätsklassen", "href": format!("{base}/conformance") },
             { "rel": "data", "type": "application/json", "title": "Sammlungen", "href": format!("{base}/collections") },
-            { "rel": "service-desc", "type": "application/json", "title": "Beschreibung der Sammlung", "href": format!("{base}/collections/flurstuecke") }
+            // `service-desc` muss auf die API-Definition zeigen, nicht auf die
+            // Sammlung (Requirement 2). QGIS wählt den Link zwar auch bei
+            // falschem Medientyp aus, liest daraus dann aber keine Seitengröße
+            // und lädt nur 100 Objekte je Layer.
+            { "rel": "service-desc", "type": super::OPENAPI, "title": "API-Definition", "href": format!("{base}/api") }
         ]
     }))
 }
@@ -33,22 +37,25 @@ pub async fn conformance() -> Json<Value> {
     Json(json!({
         "conformsTo": [
             "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
+            "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
             "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
             "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
         ]
     }))
 }
 
-/// Feldbeschreibung der Sammlung (OGC API Features Teil 3).
+/// Feldbeschreibung der Sammlung (OGC API Features Teil 3, `conf/queryables`).
 ///
-/// Ohne diesen Endpunkt bliebe die Attributtabelle in QGIS leer: Clients
-/// ermitteln das Schema sonst aus einer Beispielantwort — und die ist hier
-/// mangels Kartenausschnitt leer. Die Feldliste muss deshalb explizit
-/// beschrieben werden.
-pub async fn queryables(State(state): State<SharedState>, headers: HeaderMap) -> Json<Value> {
+/// Anders als der Name nahelegt, holt QGIS diesen Endpunkt *nicht* ab, um die
+/// Attributtabelle zu füllen: `QgsOapifProvider` fragt ihn nur an, wenn der
+/// Dienst CQL2-Text-Filterung deklariert — das tut dieser Dienst nicht. Die
+/// Felder leitet QGIS stattdessen aus dem Schema-Sample von `items` ab. Der
+/// Endpunkt bleibt dennoch, weil andere Clients ihn auswerten und die
+/// deklarierte Konformitätsklasse ihn verlangt.
+pub async fn queryables(State(state): State<SharedState>, headers: HeaderMap) -> TypedJson {
     let base = base_url(&state, &headers);
     let text = |title: &str| json!({ "type": "string", "title": title });
-    Json(json!({
+    TypedJson(SCHEMA_JSON, json!({
         "$schema": "https://json-schema.org/draft/2019-09/schema",
         "$id": format!("{base}/collections/flurstuecke/queryables"),
         "type": "object",
@@ -119,7 +126,7 @@ fn collection_doc(state: &SharedState, base: &str) -> Value {
         "description": "Flurstücke aus den Liegenschaftskatastern der Bundesländer, \
                         vereinheitlicht auf ein gemeinsames Attributschema. \
                         Anfragen benötigen einen Kartenausschnitt (bbox), \
-                        maximal 1 Grad Kantenlänge.",
+                        maximal etwa 16 km Kantenlänge.",
         "itemType": "feature",
         "crs": ["http://www.opengis.net/def/crs/OGC/1.3/CRS84"],
         "storageCrs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84",

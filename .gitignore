@@ -1,1 +1,6 @@
 /target
+
+# Handproben: curl-Mitschnitte und Antwortdumps beim Debuggen.
+# Bewusst nur die Wurzel — tests/fixtures/*.json gehören ins Repo.
+/*.json
+/*.txt

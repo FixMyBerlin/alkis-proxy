@@ -116,16 +116,41 @@ pub fn tiles_for_bbox(bbox: Bbox) -> Result<Vec<Tile>, TileError> {
     tiles_for_bbox_sized(bbox, BASE_TILE_SIZE_M)
 }
 
-fn tiles_for_bbox_sized(bbox: Bbox, size_m: u32) -> Result<Vec<Tile>, TileError> {
+/// Wie viele Basiskacheln die BBOX berührt — ohne sie aufzubauen.
+///
+/// Wird vor dem Abruf gebraucht: Der Handler muss eine zu große Anfrage
+/// ablehnen können, bevor irgendetwas geladen wird.
+pub fn tile_count_for_bbox(bbox: Bbox) -> usize {
+    let (_, _, _, _, count) = tile_span(bbox, BASE_TILE_SIZE_M);
+    count
+}
+
+/// Kachelbereich der BBOX als `(x0, y0, x1, y1, anzahl)`.
+///
+/// Die Zählung rechnet in `i64` und sättigt: Eine BBOX aus einer
+/// fehlgeschlagenen Umprojektion kann Koordinaten weit jenseits des
+/// Gültigkeitsbereichs enthalten, und ein Überlauf würde daraus eine
+/// harmlos kleine Kachelzahl machen — die Anfrage liefe dann doch los.
+fn tile_span(bbox: Bbox, size_m: u32) -> (i64, i64, i64, i64, usize) {
     let s = size_m as f64;
-    let x0 = (bbox.min_x / s).floor() as i32;
-    let y0 = (bbox.min_y / s).floor() as i32;
+    let clamp = |v: f64| v.clamp(i32::MIN as f64, i32::MAX as f64) as i64;
+    let x0 = clamp((bbox.min_x / s).floor());
+    let y0 = clamp((bbox.min_y / s).floor());
     // Eine exakt auf der Kachelgrenze endende BBOX soll die angrenzende Kachel
     // nicht mitnehmen, deshalb ceil() - 1 statt floor().
-    let x1 = ((bbox.max_x / s).ceil() as i32 - 1).max(x0);
-    let y1 = ((bbox.max_y / s).ceil() as i32 - 1).max(y0);
+    let x1 = clamp((bbox.max_x / s).ceil() - 1.0).max(x0);
+    let y1 = clamp((bbox.max_y / s).ceil() - 1.0).max(y0);
 
-    let count = (x1 - x0 + 1) as usize * (y1 - y0 + 1) as usize;
+    let breite = (x1 - x0).saturating_add(1);
+    let hoehe = (y1 - y0).saturating_add(1);
+    // Nach dem Sättigen bleibt der Wert im i64-Bereich und ist nie negativ;
+    // er passt damit in usize.
+    let count = breite.saturating_mul(hoehe).max(0) as usize;
+    (x0, y0, x1, y1, count)
+}
+
+fn tiles_for_bbox_sized(bbox: Bbox, size_m: u32) -> Result<Vec<Tile>, TileError> {
+    let (x0, y0, x1, y1, count) = tile_span(bbox, size_m);
     if count > MAX_TILES_PER_REQUEST {
         return Err(TileError::TooManyTiles { got: count });
     }
@@ -133,7 +158,7 @@ fn tiles_for_bbox_sized(bbox: Bbox, size_m: u32) -> Result<Vec<Tile>, TileError>
     let mut tiles = Vec::with_capacity(count);
     for y in y0..=y1 {
         for x in x0..=x1 {
-            tiles.push(Tile { x, y, size_m });
+            tiles.push(Tile { x: x as i32, y: y as i32, size_m });
         }
     }
     Ok(tiles)

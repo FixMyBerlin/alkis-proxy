@@ -59,6 +59,37 @@ Abgeleitet aus dem genehmigten Plan. Status: `[ ]` offen · `[x]` erledigt · `[
 - [x] Bremen nutzt NAS-Feldnamen (`flurstueckskennzeichen`, `amtlicheFlaeche`)
 - [x] Ausgabekoordinaten auf 7 Nachkommastellen gerundet (~1 cm, ein Drittel kleinere Antworten)
 
+## OGC-Konformität: was QGIS am Dienst scheitern ließ (behoben)
+
+Gefunden durch Abgleich von OGC API Features Teil 1 mit dem Quelltext des
+QGIS-OAPIF-Providers (`QgsOapifProvider::init`, `QgsOapifLandingPageRequest`).
+
+- [x] `service-desc` zeigte auf die Sammlung statt auf eine API-Definition
+      (Verstoß gegen Requirement 2). QGIS fand darin keine Seitengröße und fiel
+      auf `mPageSize = 100` zurück
+- [x] `/api` ergänzt — minimales OpenAPI 3.0. QGIS liest daraus
+      `components.parameters.limit.schema.{default,maximum}` und wählt seither
+      5000 statt 100
+- [x] Kein `next`-Link: der Layer endete nach der ersten Seite. Ein Kölner
+      Ausschnitt lieferte 100 von 8723 Flurstücken. Jetzt Seitennavigation über
+      `offset` mit `next`/`prev`
+- [x] `numberMatched` war gleich `numberReturned`, statt die Treffermenge zu
+      nennen; Clients konnten Abschneidung nicht erkennen. Wird jetzt über die
+      volle Menge berechnet und weggelassen, wo sie unbekannt ist
+- [x] Das Schema-Sample (Anfrage ohne bbox) meldete `numberMatched: 2` — QGIS
+      übernahm das per `setFeatureCount(…, exact)` als Größe des ganzen Layers.
+      Das Sample nennt jetzt keine Treffermenge mehr
+- [x] `items` antwortete als `application/json` statt `application/geo+json`,
+      `queryables` jetzt als `application/schema+json`
+- [x] Konformitätsklasse `conf/oas30` ergänzt
+- [x] Kommentar zu `/queryables` richtiggestellt: QGIS ruft den Endpunkt nur bei
+      CQL2-Filterung ab, die Felder stammen aus dem Sample
+
+## Offene Punkte zur Konformität
+- [ ] Teil 5 (Schemas): würde die Feldliste unabhängig vom Sample machen.
+      Zurückgestellt — QGIS ersetzt damit `mFields` vollständig, und das Format
+      ist noch ein Entwurf
+
 ## Offene Punkte
 - [ ] Bayern: INSPIRE-WFS-Endpunkt verifizieren
 - [ ] Attribution je Land zusammentragen (DL-DE BY 2.0 / Zero 2.0 / CC BY 4.0)

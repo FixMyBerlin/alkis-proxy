@@ -5,13 +5,15 @@ pub mod error;
 pub mod features;
 pub mod health;
 pub mod metrics;
+pub mod openapi;
 
 use std::sync::Arc;
 
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::http::{HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
+use axum::{Json, Router};
+use serde_json::Value;
 
 use axum::http::HeaderMap;
 
@@ -29,6 +31,32 @@ pub struct AppState {
 }
 
 pub type SharedState = Arc<AppState>;
+
+/// Medientyp für Feature-Antworten, von OGC API Features Teil 1 vorgeschrieben.
+pub const GEOJSON: &str = "application/geo+json";
+/// Medientyp der API-Definition. Genau diese Schreibweise sucht QGIS im
+/// `service-desc`-Link der Landing Page.
+pub const OPENAPI: &str = "application/vnd.oai.openapi+json;version=3.0";
+/// Medientyp für JSON-Schema-Dokumente, hier für `/queryables`.
+pub const SCHEMA_JSON: &str = "application/schema+json";
+
+/// JSON-Antwort mit einem anderen Medientyp als `application/json`.
+///
+/// `Json` setzt immer `application/json`. Für Feature-Antworten und die
+/// API-Definition schreibt der Standard aber eigene Medientypen vor, deshalb
+/// wird der Header hier ersetzt.
+pub struct TypedJson(pub &'static str, pub Value);
+
+impl IntoResponse for TypedJson {
+    fn into_response(self) -> Response {
+        let mut res = Json(self.1).into_response();
+        res.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            HeaderValue::from_static(self.0),
+        );
+        res
+    }
+}
 
 /// Öffentliche Basis-URL des Dienstes, ohne abschließenden Schrägstrich.
 ///
@@ -75,6 +103,7 @@ pub fn router(state: SharedState) -> Router {
     // über den GET-Handler.
     Router::new()
         .route("/", get(collections::landing).options(options_read_only))
+        .route("/api", get(openapi::api).options(options_read_only))
         .route(
             "/conformance",
             get(collections::conformance).options(options_read_only),

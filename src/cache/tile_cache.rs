@@ -19,7 +19,7 @@
 //! dass die Antwort abgeschnitten ist — in dicht bebauten Gebieten also immer.
 
 use std::collections::HashSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -81,6 +81,7 @@ impl TileCache {
     ) -> FetchOutcome {
         let mut out = FetchOutcome::default();
         let mut seen: HashSet<String> = HashSet::new();
+        let begonnen = Instant::now();
 
         for state in states {
             let Some(endpoint) = state.endpoint else {
@@ -163,6 +164,16 @@ impl TileCache {
                 .cmp(&feature_id(b).unwrap_or_default())
         });
         out.features.truncate(limit);
+
+        tracing::debug!(
+            cache = if self.is_enabled() { "aktiv" } else { "aus" },
+            treffer = out.cache_hits,
+            fehlschlaege = out.cache_misses,
+            kacheln = out.cache_hits + out.cache_misses,
+            features = out.features.len(),
+            ms = begonnen.elapsed().as_millis(),
+            "BBOX abgearbeitet"
+        );
         out
     }
 
@@ -179,32 +190,54 @@ impl TileCache {
         let key = tile.cache_key(state.key, endpoint.native_crs);
 
         if let Some(store) = &self.store {
-            if let Some(raw) = store.get(&key).await {
-                match serde_json::from_slice::<Value>(&raw) {
+            match store.get(&key).await {
+                Some(raw) => match serde_json::from_slice::<Value>(&raw) {
                     // Bekannt zu dichte Kachel: sofort teilen, ohne Abruf.
                     Ok(v) if v.get(SPLIT_MARKER).is_some() => {
+                        tracing::debug!(cache = "hit", kachel = %key, art = "split", "bekannt zu dichte Kachel, wird ohne Abruf geteilt");
                         return Ok(TileLoad {
                             features: Vec::new(),
                             truncated: true,
                             from_cache: true,
-                        })
+                        });
                     }
                     Ok(Value::Array(features)) => {
+                        tracing::debug!(cache = "hit", kachel = %key, features = features.len(), "Kachel aus dem Cache");
                         return Ok(TileLoad {
                             features,
                             truncated: false,
                             from_cache: true,
-                        })
+                        });
                     }
-                    _ => {}
-                }
+                    // Unlesbarer Eintrag zählt wie ein Fehlschlag: neu holen.
+                    _ => tracing::debug!(cache = "miss", kachel = %key, grund = "Eintrag unlesbar", "Kachel wird neu abgerufen"),
+                },
+                None => tracing::debug!(cache = "miss", kachel = %key, "Kachel nicht im Cache"),
             }
         }
 
+        let begonnen = Instant::now();
         let result = client
             .fetch(state, tile.bbox(), PER_TILE_LIMIT)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                tracing::debug!(
+                    cache = "miss",
+                    kachel = %key,
+                    ms = begonnen.elapsed().as_millis(),
+                    fehler = %e,
+                    "Kachelabruf fehlgeschlagen"
+                );
+                e.to_string()
+            })?;
+        tracing::debug!(
+            cache = "miss",
+            kachel = %key,
+            ms = begonnen.elapsed().as_millis(),
+            features = result.parcels.len(),
+            abgeschnitten = result.truncated,
+            "Kachel beim Landesdienst geholt"
+        );
 
         let features: Vec<Value> = result.parcels.iter().map(|p| p.to_feature()).collect();
 
