@@ -53,6 +53,16 @@ pub struct FetchOutcome {
     /// Die Anfrage schlägt deswegen nicht fehl; ein Teilergebnis ist brauchbarer
     /// als ein Fehler.
     pub warnings: Vec<String>,
+    /// Ob Flurstücke fehlen, die in der BBOX liegen — weil das Limit griff,
+    /// der Kachelvorrat abgebrochen wurde oder ein Landesdienst selbst auf der
+    /// kleinsten Kachel noch abschnitt.
+    ///
+    /// Anders als `warnings` (Teilausfall eines Landes, den ein Nutzer
+    /// hinnehmen kann) darf das nicht zu einer 200er-Antwort führen: Eine
+    /// gekürzte FeatureCollection sieht für einen Client mit Kartencache
+    /// genauso aus wie eine vollständige. Der Aufrufer macht daraus einen
+    /// Fehler — siehe `api::features::collect_items`.
+    pub incomplete: bool,
     pub cache_hits: usize,
     pub cache_misses: usize,
 }
@@ -120,7 +130,11 @@ impl TileCache {
                                 continue;
                             }
                             // Kleinste Kachel und immer noch abgeschnitten:
-                            // liefern, was da ist, aber sichtbar machen.
+                            // Hier fehlen Flurstücke, und kein Hineinzoomen
+                            // ändert daran etwas — die Kachel wird trotzdem
+                            // abgerufen. Der Aufrufer lehnt die Anfrage ab,
+                            // statt ein stilles Teilergebnis zu liefern.
+                            out.incomplete = true;
                             out.warnings.push(format!(
                                 "{}: Ausschnitt zu dicht bebaut, Ergebnis unvollständig",
                                 state.label
@@ -150,6 +164,9 @@ impl TileCache {
                 // Einsammeln wird sortiert und gekürzt, damit das Ergebnis
                 // nicht von der Kachelreihenfolge abhängt.
                 if out.features.len() >= limit.saturating_mul(4) {
+                    // Der Rest der Warteschlange bleibt liegen: Was hier
+                    // herauskommt, deckt die BBOX nicht mehr ab.
+                    out.incomplete = true;
                     break;
                 }
             }
@@ -163,7 +180,16 @@ impl TileCache {
                 .unwrap_or_default()
                 .cmp(&feature_id(b).unwrap_or_default())
         });
-        out.features.truncate(limit);
+        // Das Kürzen ist der häufigste Weg, auf dem Flurstücke verloren gehen:
+        // In dicht bebautem Gebiet reichen anderthalb Kilometer Kantenlänge,
+        // um über `limit` zu kommen. Weil vorher nach Kennzeichen sortiert
+        // wird und das geografisch geclustert ist (Gemarkung, Flur), fallen
+        // dabei zusammenhängende Blöcke weg, nicht verstreute Einzelstücke —
+        // die Karte sähe halb leer aus, nicht ausgedünnt.
+        if out.features.len() > limit {
+            out.incomplete = true;
+            out.features.truncate(limit);
+        }
 
         tracing::debug!(
             cache = if self.is_enabled() { "aktiv" } else { "aus" },

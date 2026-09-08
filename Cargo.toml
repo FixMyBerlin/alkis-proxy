@@ -24,6 +24,15 @@ quick-xml = "0.37"
 redb = "4.2"
 zstd = "0.13"
 
+# Nutzungsart-Klassifikation (optional, nur aktiv mit ALKIS_OSM_PBF_PATH) —
+# alle fünf pure Rust, keine C-Abhängigkeit (wichtig für das statisch
+# gelinkte Image).
+osmpbf = "0.3"
+rstar = "0.13"
+geo = "0.33"
+geo-types = "0.7"
+rustc-hash = "2"
+
 # Diagnose
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

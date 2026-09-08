@@ -23,6 +23,10 @@ pub struct Settings {
     /// Nach außen sichtbare Basis-URL. Nur nötig hinter einem Reverse Proxy,
     /// dessen Host-Header von der öffentlichen Adresse abweicht.
     pub public_url: Option<String>,
+    /// Pfad einer lokalen OSM-PBF-Datei für die Nutzungsart-Klassifikation.
+    /// Fehlt er, bleibt die Collection `flurstuecke-nutzungsart` deaktiviert
+    /// und taucht im Katalog nicht auf — analog zu `cache_path`.
+    pub osm_pbf_path: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -38,6 +42,7 @@ impl Default for Settings {
             max_limit: 5_000,
             default_limit: 5_000,
             public_url: None,
+            osm_pbf_path: None,
         }
     }
 }
@@ -64,6 +69,7 @@ impl Settings {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(d.default_limit),
             public_url: env("ALKIS_PUBLIC_URL"),
+            osm_pbf_path: env("ALKIS_OSM_PBF_PATH").map(PathBuf::from),
         }
     }
 

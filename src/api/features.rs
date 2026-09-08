@@ -11,10 +11,17 @@ use serde_json::{json, Value};
 use crate::api::error::ApiError;
 use crate::api::metrics::Metrics;
 use crate::api::{base_url, SharedState, TypedJson, GEOJSON};
+use crate::classification::{geom, ClassificationIndex};
 use crate::config::{states, StateConfig, StateKey};
 use crate::crs::reproject::{bbox_to_utm, Bbox};
 use crate::crs::tiles;
 use crate::routing;
+
+/// Pfadsegment der Basis-Collection.
+const COLLECTION_FLURSTUECKE: &str = "flurstuecke";
+/// Pfadsegment der optionalen Nutzungsart-Collection (nur mit
+/// `ALKIS_OSM_PBF_PATH` aktiv).
+pub const COLLECTION_NUTZUNGSART: &str = "flurstuecke-nutzungsart";
 
 /// Ausschnitt für das Schema-Sample: ein Häuserblock in der Kölner Innenstadt.
 /// Bewusst klein und in einem Land mit schnellem, stabilem Dienst; nach dem
@@ -51,6 +58,10 @@ pub struct ItemsQuery {
 /// Rohtext der Anfrage landet nie in einer URL.
 struct Page {
     base: String,
+    /// Pfadsegment der Collection (`flurstuecke` oder
+    /// `flurstuecke-nutzungsart`) — bestimmt, in welche Sammlung die Links
+    /// zeigen.
+    collection: &'static str,
     /// Der angefragte Ausschnitt. Beim Schema-Sample keiner, damit die Links
     /// die tatsächlich gestellte Anfrage wiedergeben und nicht den intern
     /// eingesetzten Ersatzausschnitt.
@@ -64,8 +75,8 @@ impl Page {
     /// Diese Ressource mit gegebenem Startversatz.
     fn url(&self, offset: usize) -> String {
         let mut url = format!(
-            "{}/collections/flurstuecke/items?limit={}",
-            self.base, self.limit
+            "{}/collections/{}/items?limit={}",
+            self.base, self.collection, self.limit
         );
         if let Some(b) = self.bbox {
             url.push_str(&format!(
@@ -92,7 +103,7 @@ impl Page {
                 "rel": "collection",
                 "type": "application/json",
                 "title": "Beschreibung der Sammlung",
-                "href": format!("{}/collections/flurstuecke", self.base)
+                "href": format!("{}/collections/{}", self.base, self.collection)
             }),
         ];
         // Ohne diesen Link endet der Layer in QGIS nach der ersten Seite: der
@@ -118,13 +129,16 @@ impl Page {
     }
 }
 
-pub async fn items(
-    State(app): State<SharedState>,
-    headers: HeaderMap,
-    Query(q): Query<ItemsQuery>,
-) -> Result<TypedJson, ApiError> {
-    Metrics::add(&app.metrics.requests, 1);
-    let base = base_url(&app, &headers);
+/// Sammelt die Flurstücke einer Bbox-Anfrage für eine Collection ein — der
+/// Kern von `items`/`items_nutzungsart`, unabhängig davon, ob das Ergebnis
+/// anschließend um die Nutzungsart angereichert wird.
+async fn collect_items(
+    app: &SharedState,
+    headers: &HeaderMap,
+    q: &ItemsQuery,
+    collection: &'static str,
+) -> Result<Value, ApiError> {
+    let base = base_url(app, headers);
 
     // Die rohe Anfrage, bevor irgendetwas geprüft wird. Nur hier ist zu sehen,
     // ob ein Client überhaupt einen Ausschnitt mitschickt: QGIS hängt eine
@@ -171,6 +185,7 @@ pub async fn items(
     };
     let page = Page {
         base,
+        collection,
         bbox: (!is_sample).then_some(bbox),
         state: state_key,
         limit,
@@ -215,7 +230,7 @@ pub async fn items(
         );
         // Kein Fehler: Die BBOX liegt schlicht außerhalb Deutschlands. Hier ist
         // die Treffermenge bekannt, nämlich null.
-        return Ok(TypedJson(GEOJSON, empty_collection(&page, Some(0), None)));
+        return Ok(empty_collection(&page, Some(0), None));
     }
 
     // Abgeschaltete Länder überspringen, aber im Ergebnis erwähnen.
@@ -285,6 +300,20 @@ pub async fn items(
     if !outcome.warnings.is_empty() {
         Metrics::add(&app.metrics.upstream_errors, outcome.warnings.len() as u64);
     }
+
+    // Unvollständig heißt: ablehnen. Genau wie beim zu weiten Ausschnitt ist
+    // eine gekürzte 200er-Antwort der schädlichste Ausgang — sie trägt keinen
+    // `next`-Link, weil der Dienst die fehlenden Flurstücke gar nicht kennt,
+    // und ist deshalb von einer vollständigen Antwort nicht zu unterscheiden.
+    // QGIS verbucht den Ausschnitt als fertig geladen und fragt danach auch
+    // beim Hineinzoomen nicht mehr nach.
+    //
+    // Das Schema-Sample ist ausgenommen: Dort ist die Kürzung auf zwei
+    // Features gewollt und die Antwort sagt das in ihrer Warnung.
+    if outcome.incomplete && !is_sample {
+        return Err(zu_dicht(bbox, app.settings.max_limit));
+    }
+
     warnings.extend(outcome.warnings);
     if is_sample {
         warnings.push(
@@ -297,13 +326,11 @@ pub async fn items(
 
     let total = outcome.features.len();
     // `numberMatched` meint nach OGC API Features alle passenden Objekte, nicht
-    // die der Seite. Bekannt ist die Zahl nur, wenn zwei Dinge gelten: die
-    // Anfrage galt einem echten Ausschnitt (das Sample zählt nicht, sonst
-    // erbte QGIS dessen zwei Objekte als Größe des ganzen Layers), und die
-    // Sammlung lief nicht in die Obergrenze — dann könnte mehr existieren.
-    // Ist sie unbekannt, bleibt das Feld weg; der Standard erlaubt das
-    // ausdrücklich und es ist ehrlicher als eine erfundene Zahl.
-    let matched = (!is_sample && total < collect_limit).then_some(total);
+    // die der Seite. Seit unvollständige Ergebnisse abgelehnt werden (oben),
+    // ist `total` genau diese Zahl — was hier ankommt, ist alles, was in der
+    // BBOX liegt. Nur das Schema-Sample bleibt ausgenommen: dessen zwei
+    // Objekte erbte QGIS sonst als Größe des ganzen Layers.
+    let matched = (!is_sample).then_some(total);
 
     let features: Vec<Value> = outcome
         .features
@@ -338,7 +365,160 @@ pub async fn items(
     if let Some(line) = states::attribution_line(&beteiligte_laender(&body), current_year()) {
         body["attribution"] = json!(line);
     }
+    Ok(body)
+}
+
+/// Flurstücke einer Bbox, harmonisiert über die 15 Landes-WFS — ohne
+/// Nutzungsart. Unverändert gegenüber dem Verhalten vor Einführung der
+/// zweiten Collection.
+pub async fn items(
+    State(app): State<SharedState>,
+    headers: HeaderMap,
+    Query(q): Query<ItemsQuery>,
+) -> Result<TypedJson, ApiError> {
+    Metrics::add(&app.metrics.requests, 1);
+    let body = collect_items(&app, &headers, &q, COLLECTION_FLURSTUECKE).await?;
     Ok(TypedJson(GEOJSON, body))
+}
+
+/// Dieselben Flurstücke, zusätzlich um eine OSM-basierte Nutzungsart-Schätzung
+/// angereichert (`category`/`rule`/`confidence`/`conflict`). Existiert nur,
+/// wenn `ALKIS_OSM_PBF_PATH` konfiguriert ist.
+pub async fn items_nutzungsart(
+    State(app): State<SharedState>,
+    headers: HeaderMap,
+    Query(q): Query<ItemsQuery>,
+) -> Result<TypedJson, ApiError> {
+    Metrics::add(&app.metrics.requests, 1);
+    if app.settings.osm_pbf_path.is_none() {
+        return Err(ApiError::NotFound(
+            "Die Collection flurstuecke-nutzungsart ist nicht konfiguriert \
+             (ALKIS_OSM_PBF_PATH fehlt)."
+                .into(),
+        ));
+    }
+    let mut body = collect_items(&app, &headers, &q, COLLECTION_NUTZUNGSART).await?;
+    enrich_with_classification(&app, &mut body).await?;
+    Ok(TypedJson(GEOJSON, body))
+}
+
+/// Reichert die bereits eingesammelten Features um `category`/`rule`/
+/// `confidence`/`conflict` an. Läuft in `spawn_blocking`: bis zu
+/// `ALKIS_MAX_LIMIT` Flurstücke × Polygon-Verschneidung würden sonst einen
+/// Tokio-Worker blockieren. Ist der Index noch nicht bereit (Hintergrund-Task
+/// läuft noch oder ist fehlgeschlagen), werden die Flurstücke unverändert
+/// geliefert, ergänzt um eine Warnung — kein Fehler, die Basisdaten bleiben
+/// brauchbar.
+///
+/// Die Anreicherung darf die Flurstücke unter keinen Umständen verlieren: Eine
+/// Antwort mit `numberReturned: 2650` und leerer `features`-Liste wäre genau
+/// die 200er-Antwort ohne Daten, die den Kartencache eines Clients vergiftet
+/// (siehe `ApiError::TooLarge`). Deshalb wird jede Klassifikation einzeln
+/// abgesichert, und ein Fehlschlag des Tasks selbst wird zum Fehlerstatus.
+async fn enrich_with_classification(app: &SharedState, body: &mut Value) -> Result<(), ApiError> {
+    let index = app.classification.read().await.clone();
+    let Some(index) = index else {
+        add_warning(
+            body,
+            "Nutzungsart-Index wird noch aufgebaut oder ist nicht verfügbar; \
+             Flurstücke werden ohne category/rule/confidence/conflict geliefert.",
+        );
+        return Ok(());
+    };
+
+    let Some(features) = body.get_mut("features").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    let taken = std::mem::take(features);
+
+    let ergebnis = tokio::task::spawn_blocking(move || {
+        let mut taken = taken;
+        let mut fehlgeschlagen = 0usize;
+        for feature in &mut taken {
+            if !enrich_feature(feature, &index) {
+                fehlgeschlagen += 1;
+            }
+        }
+        (taken, fehlgeschlagen)
+    })
+    .await;
+
+    // Die Features sind in den Task gewandert; scheitert er als Ganzes, sind
+    // sie nicht mehr zu retten. Dann lieber 500 als eine leere Liste unter
+    // einem 200er — der Client soll es merken und erneut anfragen können.
+    let (enriched, fehlgeschlagen) = ergebnis.map_err(|e| {
+        tracing::error!(error = %e, "Nutzungsart-Anreicherung abgebrochen");
+        ApiError::Internal(
+            "Die Nutzungsart-Anreicherung ist fehlgeschlagen. Die Flurstücke selbst sind \
+             unter /collections/flurstuecke/items unverändert abrufbar."
+                .into(),
+        )
+    })?;
+
+    if fehlgeschlagen > 0 {
+        tracing::warn!(
+            fehlgeschlagen,
+            gesamt = enriched.len(),
+            "Nutzungsart: einzelne Flurstücke konnten nicht klassifiziert werden"
+        );
+        add_warning(
+            body,
+            &format!(
+                "{fehlgeschlagen} Flurstücke konnten nicht klassifiziert werden und tragen \
+                 category/rule/confidence/conflict als null."
+            ),
+        );
+    }
+
+    body["features"] = Value::Array(enriched);
+    Ok(())
+}
+
+/// Setzt die vier Nutzungsart-Properties eines einzelnen Features. Immer
+/// alle vier (ggf. `null`), nie nur einen Teil — dieselbe Konvention wie beim
+/// übrigen Schema (siehe `model/parcel.rs`): nicht belegbar heißt `null`,
+/// nie abwesend.
+///
+/// `false`, wenn die Klassifikation panisch abgebrochen ist. Das ist kein
+/// theoretischer Fall: `index.classify` verschneidet über `geo::BooleanOps`
+/// mit OSM-Geometrien, die `osm_extract` ungeprüft aus rohen Ways baut —
+/// selbstüberschneidende Ringe sind in OSM häufig, und das Clipping ist
+/// darauf nicht robust. Ein einziges solches Flurstück darf nicht die ganze
+/// Seite mitnehmen.
+fn enrich_feature(feature: &mut Value, index: &ClassificationIndex) -> bool {
+    let classification = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        geom::multipolygon_from_feature(feature).map(|mp| index.classify(&mp))
+    }));
+    // Keine verwertbare Geometrie (`Ok(None)`) und geplatzte Verschneidung
+    // (`Err`) führen zur selben Belegung — alle vier Felder `null`.
+    // Unterschieden werden sie nur im Rückgabewert, damit der Aufrufer das
+    // Zweite zählen und melden kann.
+    let gelungen = classification.is_ok();
+    let Some(props) = feature.get_mut("properties").and_then(Value::as_object_mut) else {
+        return gelungen;
+    };
+    match classification {
+        Ok(Some(c)) => {
+            props.insert("category".into(), json!(c.category.as_str()));
+            props.insert("rule".into(), json!(c.rule));
+            props.insert("confidence".into(), json!(c.confidence));
+            props.insert("conflict".into(), json!(c.conflict));
+        }
+        Ok(None) | Err(_) => {
+            props.insert("category".into(), Value::Null);
+            props.insert("rule".into(), Value::Null);
+            props.insert("confidence".into(), Value::Null);
+            props.insert("conflict".into(), Value::Null);
+        }
+    }
+    gelungen
+}
+
+fn add_warning(body: &mut Value, text: &str) {
+    match body.get_mut("warnings").and_then(Value::as_array_mut) {
+        Some(warnings) => warnings.push(json!(text)),
+        None => body["warnings"] = json!([text]),
+    }
 }
 
 /// Einzelnes Flurstück über seine Feature-ID (`NW:05495803101089______`).
@@ -390,6 +570,28 @@ fn zu_gross(bbox: Bbox, kacheln: Option<usize>) -> ApiError {
         "Der Ausschnitt ist zu groß. Flurstücke werden bis etwa {kante_km:.0} km Kantenlänge \
          geliefert; bitte näher heranzoomen. In QGIS setzt man dafür am besten eine \
          maßstabsabhängige Sichtbarkeit auf dem Layer."
+    ))
+}
+
+/// Fehler für einen Ausschnitt, der zwar klein genug ist, aber mehr Flurstücke
+/// enthält, als eine Anfrage vollständig liefern kann.
+///
+/// Der Unterschied zu [`zu_gross`] ist für den Nutzer wichtig genug für eine
+/// eigene Meldung: Dort ist die Fläche zu weit, hier die Bebauung zu dicht.
+/// In der Kölner oder Stuttgarter Innenstadt reichen anderthalb Kilometer
+/// Kantenlänge, um über die Grenze zu kommen — wer nur „zu groß“ liest,
+/// zoomt nicht weit genug heran.
+fn zu_dicht(bbox: Bbox, max_limit: usize) -> ApiError {
+    tracing::info!(
+        bbox = %bbox_text(bbox),
+        grenze = max_limit,
+        "items abgelehnt: mehr Flurstücke als lieferbar"
+    );
+    ApiError::TooDense(format!(
+        "Der Ausschnitt enthält mehr als {max_limit} Flurstücke; so viele kann eine Anfrage \
+         nicht vollständig liefern. Bitte näher heranzoomen. Ein Teilergebnis wird bewusst \
+         nicht geliefert, weil Clients mit Kartencache es für vollständig halten und den \
+         Ausschnitt danach nicht mehr nachladen."
     ))
 }
 
@@ -563,6 +765,46 @@ mod tests {
     }
 
     #[test]
+    fn zu_dichter_ausschnitt_wird_abgelehnt_nicht_gekuerzt() {
+        // Der Kern des Kartencache-Problems: Ein Teilergebnis mit Status 200
+        // ist für QGIS nicht von einem vollständigen zu unterscheiden.
+        let e = zu_dicht(Bbox::new(9.19, 48.77, 9.21, 48.79), 5_000);
+        assert!(matches!(e, ApiError::TooDense(_)), "{e:?}");
+        assert!(e.to_string().contains("5000"), "{e}");
+    }
+
+    #[test]
+    fn ohne_geometrie_werden_alle_vier_felder_null_gesetzt() {
+        // Nie nur ein Teil der vier Felder: QGIS leitet die Spalten aus dem
+        // ersten Feature ab.
+        let index = ClassificationIndex::leer_fuer_tests();
+        let mut feature = json!({
+            "type": "Feature",
+            "geometry": Value::Null,
+            "properties": { "parcelId": "X" }
+        });
+        assert!(enrich_feature(&mut feature, &index));
+        for feld in ["category", "rule", "confidence", "conflict"] {
+            assert_eq!(feature["properties"][feld], Value::Null, "{feld}");
+        }
+    }
+
+    #[test]
+    fn features_ohne_properties_ueberleben_die_anreicherung() {
+        // Kein Grund, das Feature zu verlieren — die Geometrie ist brauchbar.
+        let index = ClassificationIndex::leer_fuer_tests();
+        let mut feature = json!({
+            "type": "Feature",
+            "geometry": {
+                "type": "MultiPolygon",
+                "coordinates": [[[[9.0, 48.0], [9.1, 48.0], [9.1, 48.1], [9.0, 48.0]]]]
+            }
+        });
+        assert!(enrich_feature(&mut feature, &index));
+        assert!(feature["geometry"]["coordinates"].is_array());
+    }
+
+    #[test]
     fn trefferquote_ohne_kacheln_ist_kein_nullprozent() {
         assert_eq!(trefferquote(0, 0), "-");
         assert_eq!(trefferquote(0, 4), "0%");
@@ -599,6 +841,7 @@ mod tests {
     fn seite(offset: usize, limit: usize) -> Page {
         Page {
             base: "http://x".into(),
+            collection: COLLECTION_FLURSTUECKE,
             bbox: Some(Bbox::new(9.0, 48.0, 9.1, 48.1)),
             state: None,
             limit,
@@ -649,6 +892,7 @@ mod tests {
     fn self_link_gibt_die_gestellte_anfrage_wieder() {
         let p = Page {
             base: "http://x".into(),
+            collection: COLLECTION_FLURSTUECKE,
             bbox: Some(Bbox::new(9.0, 48.0, 9.1, 48.1)),
             state: StateKey::from_code("NW"),
             limit: 42,
@@ -667,6 +911,7 @@ mod tests {
         // Ersatzausschnitt nicht behaupten.
         let p = Page {
             base: "http://x".into(),
+            collection: COLLECTION_FLURSTUECKE,
             bbox: None,
             state: None,
             limit: SCHEMA_SAMPLE_LIMIT,

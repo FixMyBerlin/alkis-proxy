@@ -41,6 +41,7 @@ Weil im Image keine Shell steckt, hat es bewusst keine `HEALTHCHECK`-Anweisung.
 ```bash
 cargo build --release
 ALKIS_BIND=127.0.0.1:8099 ALKIS_CACHE_PATH=./cache.redb ALKIS_CACHE_MAX_SIZE=2gb \
+  ALKIS_OSM_PBF_PATH=./data/baden-wuerttemberg-latest.osm.pbf \
   ./target/release/alkis-proxy
 ```
 
@@ -49,6 +50,10 @@ korrekt, ganz ohne weiteren Prozess. Ob er tatsächlich angebunden ist, sagt bei
 Start die Zeile `Cache angebunden`; sonst steht dort eine Warnung. Die Datei
 unter `ALKIS_CACHE_PATH` legt der Dienst selbst an, das Verzeichnis muss aber
 existieren und beschreibbar sein.
+
+`ALKIS_OSM_PBF_PATH` ist ebenso optional und aktiviert die zusätzliche
+Collection `flurstuecke-nutzungsart` (siehe [unten](#optional-nutzungsart-collection-flurstuecke-nutzungsart)) —
+ohne die Variable läuft der Dienst unverändert, ganz ohne die zweite Sammlung.
 
 `RUST_LOG=alkis_proxy=debug` protokolliert jede eingehende Anfrage mitsamt
 `bbox` und Client — das ist die Stelle, an der man sieht, welchen Ausschnitt
@@ -66,6 +71,7 @@ QGIS tatsächlich anfragt.
 | `ALKIS_MAX_LIMIT` | `5000` | Obergrenze für `limit` |
 | `ALKIS_PUBLIC_URL` | – | Nach außen sichtbare Basis-URL; nur nötig hinter einem Reverse Proxy |
 | `ALKIS_DISABLE_COMPRESSION` | – | Gesetzt und nicht leer: keine Antwortkompression |
+| `ALKIS_OSM_PBF_PATH` | – | Pfad einer lokalen OSM-PBF-Datei; aktiviert die optionale Collection `flurstuecke-nutzungsart` (siehe unten) |
 | `RUST_LOG` | `alkis_proxy=info` | Protokollierung |
 
 Nur für `docker compose`, nicht vom Dienst selbst gelesen:
@@ -79,10 +85,12 @@ Nur für `docker compose`, nicht vom Dienst selbst gelesen:
 ```
 GET /collections/flurstuecke/items?bbox=<w>,<s>,<e>,<n>[&limit=][&offset=][&state=NW]
 GET /collections/flurstuecke      Beschreibung inkl. Quellen und Lizenzen
+GET /collections/flurstuecke-nutzungsart/items?bbox=...   nur mit ALKIS_OSM_PBF_PATH
+GET /collections/flurstuecke-nutzungsart
 GET /collections
 GET /conformance                  Erfüllte Konformitätsklassen
 GET /api                          API-Definition (OpenAPI 3.0)
-GET /health                       Zustand, abgeschaltete Landesdienste
+GET /health                       Zustand, abgeschaltete Landesdienste, Nutzungsart-Index
 GET /metrics                      Prometheus
 ```
 
@@ -93,6 +101,18 @@ Die Grenze ergibt sich aus der Kachelzerlegung: Eine Anfrage darf höchstens 64
 Kacheln des 1-km-Rasters berühren. Geprüft wird im nativen CRS des jeweiligen
 Landes, also exakt so, wie gleich darauf abgerufen würde. Ein zu großer
 Ausschnitt liefert **HTTP 400**, keine leere Antwort.
+
+Eine zweite Grenze gilt unabhängig von der Fläche: Enthält ein Ausschnitt mehr
+Flurstücke als `ALKIS_MAX_LIMIT` (Vorgabe 5000), wird er ebenfalls mit **HTTP
+400** abgelehnt statt gekürzt geliefert. In dicht bebautem Gebiet reichen dafür
+schon anderthalb Kilometer Kantenlänge — Stuttgart-Ost, 1,5 × 2,2 km: rund 5450
+Flurstücke. Der Grund ist derselbe wie oben: Eine gekürzte Antwort trägt keinen
+`next`-Link, weil der Dienst die fehlenden Flurstücke gar nicht kennt, und ist
+damit von einer vollständigen nicht zu unterscheiden. Wer mehr auf einmal
+braucht und den Speicher hat, setzt `ALKIS_MAX_LIMIT` hoch.
+
+`numberMatched` nennt deshalb immer die vollständige Treffermenge — außer beim
+Schema-Sample, das ohne `bbox` geliefert wird.
 
 ## Nutzung in QGIS
 
@@ -108,12 +128,14 @@ Setze das Projekt-Koordinatensystem auf `EPSG:4326`, damit die Flächen sichtbar
 
 #### Maßstabsgrenze setzen
 
-Ist der Kartenausschnitt größer als etwa 8 km Kantengröße, antwortet der Dienst mit
-HTTP 400. Damit QGIS erst gar nicht so weit anfragt, sollte am Layer eine
-maßstabsabhängige Sichtbarkeit gesetzt sein:
+Ist der Kartenausschnitt größer als etwa 8 km Kantengröße — oder enthält er mehr
+als `ALKIS_MAX_LIMIT` Flurstücke —, antwortet der Dienst mit HTTP 400. Damit
+QGIS erst gar nicht so weit anfragt, sollte am Layer eine maßstabsabhängige
+Sichtbarkeit gesetzt sein:
 
 **Layereigenschaften → Darstellung → Maßstabsabhängige Sichtbarkeit**,
-Minimum etwa **1:50.000**.
+Minimum etwa **1:50.000** — in Innenstädten eher **1:10.000**, sonst greift die
+Flurstücksgrenze.
 
 Ohne diese Einstellung erscheint beim Herauszoomen eine Fehlermeldung in der
 Meldungsleiste. Das ist unschön, aber harmlos — und deutlich besser als die
@@ -153,6 +175,76 @@ eintragen. Lädt einmalig, dafür ohne Nachladen beim Zoomen.
 
 Welche Felder in welchem Land belegt sind, welche Angaben in keinem Dienst
 enthalten sind und was die Adapter bewusst verwerfen, steht in [DATENMODELL.md](DATENMODELL.md).
+
+## Optional: Nutzungsart-Collection (`flurstuecke-nutzungsart`)
+
+Die öffentlichen ALKIS-Daten enthalten aus Datenschutzgründen keine
+Eigentümerangaben. `flurstuecke-nutzungsart` liefert dieselben Flurstücke wie
+`flurstuecke`, ergänzt um eine **geschätzte** Nutzungsart — **ausschließlich
+aus OpenStreetMap** abgeleitet, nie aus ALKIS-Zusatzquellen:
+
+```json
+{
+  "properties": {
+    "...": "alle Felder von flurstuecke, unverändert",
+    "category": "privat",
+    "rule": "wohngebaeude",
+    "confidence": 0.6,
+    "conflict": null
+  }
+}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `category` | `privat` \| `oeffentlich` \| `bahn` \| `unbekannt` |
+| `rule` | Name der greifenden Regel (`src/classification/rules.rs`) |
+| `confidence` | Konfidenz der Schätzung, 0.0–1.0 |
+| `conflict` | Abweichende Kategorie einer anderen greifenden Regel, falls vorhanden |
+
+Aktiviert wird die Collection über `ALKIS_OSM_PBF_PATH`, den Pfad einer
+lokalen `.osm.pbf`-Datei (z. B. von [Geofabrik](https://download.geofabrik.de/europe/germany.html)).
+Ohne diese Variable taucht `flurstuecke-nutzungsart` in `/collections` gar
+nicht erst auf — der Dienst läuft unverändert weiter.
+
+```bash
+ALKIS_OSM_PBF_PATH=./baden-wuerttemberg-latest.osm.pbf ./target/release/alkis-proxy
+```
+
+Die Datei wird beim Start **einmalig** in einen residenten Index geladen
+(Fortschritt sichtbar im Log, Endzustand über `GET /health` → Feld
+`classification`: `aus` | `wird_indiziert` | `bereit`). Jede Bbox-Anfrage
+klassifiziert danach live gegen diesen Index — es wird nichts vorberechnet
+oder zwischengespeichert. Bis der Index fertig ist, liefert die Collection die
+Flurstücke bereits, aber ohne Nutzungsart, dazu eine Warnung im Feld
+`warnings` der Antwort.
+
+Für eine deutschlandweite Datei reduziert ein Vorfilter mit
+[osmium-tool](https://osmcode.org/osmium-tool/) die Startzeit erheblich —
+optional, aber empfohlen:
+
+```bash
+osmium tags-filter germany-latest.osm.pbf \
+  w/operator:type w/building=house,residential,detached,apartments,public,school \
+  w/amenity=townhall,public_building,courthouse,community_centre,school \
+  w/leisure=schoolyard,park,playground \
+  w/landuse=industrial,commercial,railway \
+  w/tourism=zoo,hotel w/railway=rail \
+  -o germany-filtered.osm.pbf
+```
+
+**Bekannte Einschränkungen** (siehe Code-Kommentare in `src/classification/`):
+
+- **Keine dedizierte Straßen-Regel.** Ohne amtlichen Verkehrsnetz-WFS (bewusst
+  nicht verwendet — das wäre ALKIS, nicht OSM) und ohne Puffer um
+  `highway=*`-Linien werden reine Straßenflurstücke meist als `unbekannt`
+  klassifiziert statt als `oeffentlich`. Die größte bekannte Lücke von v1.
+- **Nur einfache Ways, keine Multipolygon-Relationen.** Größere Parks und
+  manche Landnutzungsflächen sind in OSM oft als Relation statt als Way
+  gemappt und werden nicht erkannt.
+- Kein Neuladen bei geänderter PBF-Datei zur Laufzeit — Neustart nötig.
+- Die Klassifikation ist eine Heuristik mit Konfidenzwert, **keine verlässliche
+  Eigentumsfeststellung**.
 
 ## Quellen und Lizenzen
 

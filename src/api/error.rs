@@ -22,6 +22,23 @@ pub enum ApiError {
     /// hinterlässt diesen Eintrag nicht.
     #[error("{0}")]
     TooLarge(String),
+    /// Der Ausschnitt ist klein genug, enthält aber mehr Flurstücke, als eine
+    /// Anfrage vollständig liefern kann.
+    ///
+    /// Aus demselben Grund ein Fehler wie [`ApiError::TooLarge`]: Eine
+    /// abgeschnittene Antwort ist für einen Client mit Kartencache nicht von
+    /// einer vollständigen zu unterscheiden — sie trägt keinen `next`-Link,
+    /// weil der Dienst die Reste gar nicht kennt. QGIS verbucht den Ausschnitt
+    /// dann als fertig geladen und fragt nicht wieder nach.
+    #[error("{0}")]
+    TooDense(String),
+    /// Etwas ist schiefgegangen, was der Client nicht verursacht hat.
+    ///
+    /// Ebenfalls bewusst ein Fehler statt einer notdürftig zusammengesetzten
+    /// Antwort: Lieber gar kein Ergebnis als ein stilles Teilergebnis mit
+    /// Status 200 — siehe [`ApiError::TooLarge`].
+    #[error("{0}")]
+    Internal(String),
 }
 
 impl IntoResponse for ApiError {
@@ -30,6 +47,8 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "Ungültige Anfrage"),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, "Nicht gefunden"),
             ApiError::TooLarge(_) => (StatusCode::BAD_REQUEST, "Ausschnitt zu groß"),
+            ApiError::TooDense(_) => (StatusCode::BAD_REQUEST, "Zu viele Flurstücke"),
+            ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Interner Fehler"),
         };
         // Ohne diese Zeile bleibt eine abgelehnte Anfrage im Log unsichtbar:
         // der Client bekommt 4xx, der Betreiber sieht nichts. Gerade bei

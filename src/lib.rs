@@ -6,6 +6,7 @@
 pub mod adapters;
 pub mod api;
 pub mod cache;
+pub mod classification;
 pub mod config;
 pub mod crs;
 pub mod model;

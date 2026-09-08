@@ -10,8 +10,7 @@
 //! der Notnagel `mPageSize = 100` — der Layer holt dann 100 Objekte je Seite
 //! und, ohne `next`-Link, überhaupt nur diese 100.
 //!
-//! Beschrieben wird deshalb bewusst nur, was der Dienst wirklich kann. Ein
-//! erfundener Parameter wäre schlimmer als ein fehlender: QGIS leitet aus den
+//! QGIS leitet aus den
 //! Parametern der `items`-Operation ab, wonach sich serverseitig filtern lässt.
 
 use axum::extract::State;
@@ -30,9 +29,41 @@ pub async fn api(State(state): State<SharedState>, headers: HeaderMap) -> TypedJ
         })
     };
 
-    TypedJson(
-        OPENAPI,
-        serde_json::json!({
+    // Nur beschrieben, wenn die Collection auch existiert — sonst würde die
+    // API-Definition einen Pfad bewerben, den `/collections` gar nicht führt.
+    let mut paths = serde_json::json!({});
+    if state.settings.osm_pbf_path.is_some() {
+        paths["/collections/flurstuecke-nutzungsart"] = serde_json::json!({ "get": {
+            "summary": "Beschreibung der Nutzungsart-Sammlung",
+            "operationId": "describeCollectionNutzungsart",
+            "responses": json_response("Beschreibung der Sammlung flurstuecke-nutzungsart.")
+        }});
+        paths["/collections/flurstuecke-nutzungsart/items"] = serde_json::json!({ "get": {
+            "summary": "Flurstücke mit geschätzter Nutzungsart in einem Ausschnitt",
+            "operationId": "getFeaturesNutzungsart",
+            "parameters": [
+                { "$ref": "#/components/parameters/bbox" },
+                { "$ref": "#/components/parameters/limit" },
+                { "$ref": "#/components/parameters/offset" },
+                { "$ref": "#/components/parameters/state" }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Die Flurstücke im angefragten Ausschnitt, \
+                                     angereichert um category/rule/confidence/conflict.",
+                    "content": { "application/geo+json": { "schema": { "type": "object" } } }
+                },
+                "400": {
+                    "description": "Fehlerhafte Anfrage — auch, wenn der Ausschnitt zu weit \
+                                    ist oder mehr Flurstücke enthält, als eine Anfrage \
+                                    vollständig liefern kann.",
+                    "content": { "application/problem+json": { "schema": { "type": "object" } } }
+                }
+            }
+        }});
+    }
+
+    let mut document = serde_json::json!({
             "openapi": "3.0.3",
             "info": {
                 "title": "ALKIS-Proxy",
@@ -73,8 +104,13 @@ pub async fn api(State(state): State<SharedState>, headers: HeaderMap) -> TypedJ
                         "name": "bbox",
                         "in": "query",
                         "description": "Ausschnitt in WGS84 als min_lon,min_lat,max_lon,max_lat. \
-                                        Höchstens etwa 8 km Kantenlänge; \
-                                        größere Ausschnitte werden mit 400 abgelehnt.",
+                                        Höchstens etwa 8 km Kantenlänge; größere \
+                                        Ausschnitte werden mit 400 abgelehnt. Ebenso \
+                                        abgelehnt wird ein kleinerer, aber so dicht \
+                                        bebauter Ausschnitt, dass mehr Flurstücke darin \
+                                        liegen als eine Anfrage liefern kann — ein \
+                                        gekürztes Ergebnis wäre von einem vollständigen \
+                                        nicht zu unterscheiden.",
                         "required": false,
                         "style": "form",
                         "explode": false,
@@ -143,7 +179,9 @@ pub async fn api(State(state): State<SharedState>, headers: HeaderMap) -> TypedJ
                             "content": { "application/geo+json": { "schema": { "type": "object" } } }
                         },
                         "400": {
-                            "description": "Fehlerhafte Anfrage.",
+                            "description": "Fehlerhafte Anfrage — auch, wenn der Ausschnitt \
+                                        zu weit ist oder mehr Flurstücke enthält, als eine \
+                                        Anfrage vollständig liefern kann.",
                             "content": { "application/problem+json": { "schema": { "type": "object" } } }
                         }
                     }
@@ -165,6 +203,14 @@ pub async fn api(State(state): State<SharedState>, headers: HeaderMap) -> TypedJ
                     }
                 }}
             }
-        }),
-    )
+        });
+
+    if let Some(extra) = paths.as_object() {
+        document["paths"]
+            .as_object_mut()
+            .expect("paths ist ein Objekt")
+            .extend(extra.clone());
+    }
+
+    TypedJson(OPENAPI, document)
 }

@@ -1,6 +1,11 @@
 /target
+/cache.redb
 
 # Handproben: curl-Mitschnitte und Antwortdumps beim Debuggen.
 # Bewusst nur die Wurzel — tests/fixtures/*.json gehören ins Repo.
 /*.json
 /*.txt
+
+# Lokale OSM-PBF-Dateien für ALKIS_OSM_PBF_PATH (siehe README) — mehrere
+# hundert MB, gehören nicht ins Repo.
+/data/

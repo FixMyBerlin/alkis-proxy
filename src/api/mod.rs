@@ -18,6 +18,7 @@ use serde_json::Value;
 use axum::http::HeaderMap;
 
 use crate::cache::TileCache;
+use crate::classification::ClassificationIndex;
 use crate::config::Settings;
 use crate::upstream::{CircuitBreaker, UpstreamClient};
 use metrics::Metrics;
@@ -28,6 +29,11 @@ pub struct AppState {
     pub cache: TileCache,
     pub breaker: CircuitBreaker,
     pub metrics: Metrics,
+    /// Der Nutzungsart-Index — `None`, solange `ALKIS_OSM_PBF_PATH` fehlt oder
+    /// der Hintergrund-Task noch indiziert. Ein `RwLock` statt eines
+    /// einmaligen Werts, weil der Index erst nach dem Start des Servers
+    /// fertig wird und dann eingesetzt werden muss, ohne neu zu deployen.
+    pub classification: tokio::sync::RwLock<Option<Arc<ClassificationIndex>>>,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -127,6 +133,21 @@ pub fn router(state: SharedState) -> Router {
         .route(
             "/collections/flurstuecke/items/{id}",
             get(features::item).options(options_read_only),
+        )
+        // Optionale Nutzungsart-Collection: die Routen existieren immer,
+        // antworten aber mit einer klaren Fehlermeldung, solange
+        // ALKIS_OSM_PBF_PATH nicht konfiguriert ist (siehe features::items_nutzungsart).
+        .route(
+            "/collections/flurstuecke-nutzungsart",
+            get(collections::describe_nutzungsart).options(options_read_only),
+        )
+        .route(
+            "/collections/flurstuecke-nutzungsart/queryables",
+            get(collections::queryables_nutzungsart).options(options_read_only),
+        )
+        .route(
+            "/collections/flurstuecke-nutzungsart/items",
+            get(features::items_nutzungsart).options(options_read_only),
         )
         .route("/health", get(health::health).options(options_read_only))
         .route("/metrics", get(health::metrics).options(options_read_only))

@@ -45,8 +45,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cache: TileCache::new(store),
         breaker: CircuitBreaker::new(),
         metrics: Metrics::default(),
+        classification: tokio::sync::RwLock::new(None),
         settings: settings.clone(),
     });
+
+    // Die Nutzungsart-Collection ist optional: Ist ALKIS_OSM_PBF_PATH gesetzt,
+    // wird die Datei im Hintergrund indiziert (bei einer deutschlandweiten
+    // PBF potenziell mehrere Minuten) — der Server wartet nicht darauf,
+    // `/health` und die Warnungen der items-Antwort zeigen den Fortschritt.
+    // Ein Fehlschlag lässt den Dienst ohne die zweite Collection weiterlaufen,
+    // exakt wie ein nicht nutzbarer Cache (siehe oben).
+    if let Some(path) = settings.osm_pbf_path.clone() {
+        let state_fuer_index = state.clone();
+        tokio::spawn(async move {
+            tracing::info!(pfad = %path.display(), "Nutzungsart-Index: Indizierung gestartet");
+            let ergebnis = {
+                let path = path.clone();
+                tokio::task::spawn_blocking(move || {
+                    alkis_proxy::classification::ClassificationIndex::build(&path)
+                })
+                .await
+            };
+            match ergebnis {
+                Ok(Ok(index)) => {
+                    let features = index.len();
+                    *state_fuer_index.classification.write().await = Some(Arc::new(index));
+                    tracing::info!(features, "Nutzungsart-Index bereit — Collection flurstuecke-nutzungsart aktiv");
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        error = %e,
+                        pfad = %path.display(),
+                        "Nutzungsart-Index konnte nicht gebaut werden — \
+                         flurstuecke-nutzungsart bleibt ohne Ergebnisse"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Nutzungsart-Indizierung abgebrochen");
+                }
+            }
+        });
+    } else {
+        tracing::info!("ALKIS_OSM_PBF_PATH nicht gesetzt — Collection flurstuecke-nutzungsart bleibt aus");
+    }
 
     // Kompression spart bei großen FeatureCollections viel Bandbreite, kann
     // aber bei manchen Clients Probleme machen — deshalb abschaltbar.
