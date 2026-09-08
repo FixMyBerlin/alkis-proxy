@@ -78,7 +78,7 @@ fn env(key: &str) -> Option<String> {
 }
 
 /// Parst Größenangaben wie `32gb`, `512mb` oder eine reine Byte-Zahl.
-/// `kb`/`mb`/`gb` rechnen binär (1024er-Basis), wie zuvor bei Valkeys
+/// `kb`/`mb`/`gb` rechnen binär (1024er-Basis)
 /// `maxmemory` — damit ändert sich für bestehende `.env`-Werte nichts.
 fn parse_size(v: &str) -> Option<u64> {
     let v = v.trim().to_lowercase();

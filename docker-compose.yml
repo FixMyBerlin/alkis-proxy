@@ -2,8 +2,7 @@
 # wird automatisch gelesen (Vorlage: .env.example).
 #
 # Der Cache läuft eingebettet im Dienst selbst (redb, eine Datei unter
-# /data) — anders als bei Valkey vorher gibt es dafür keinen zweiten Service
-# und keine Netzwerkverbindung, die scheitern könnte.
+# /data)
 name: alkis-proxy
 
 services:
