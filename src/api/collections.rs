@@ -126,7 +126,7 @@ fn collection_doc(state: &SharedState, base: &str) -> Value {
         "description": "Flurstücke aus den Liegenschaftskatastern der Bundesländer, \
                         vereinheitlicht auf ein gemeinsames Attributschema. \
                         Anfragen benötigen einen Kartenausschnitt (bbox), \
-                        maximal etwa 16 km Kantenlänge.",
+                        maximal etwa 8 km Kantenlänge.",
         "itemType": "feature",
         "crs": ["http://www.opengis.net/def/crs/OGC/1.3/CRS84"],
         "storageCrs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84",

@@ -24,7 +24,7 @@ pub const MAX_SUBDIVISION_DEPTH: u8 = 3;
 ///
 /// Schützt davor, dass eine sehr große BBOX hunderte Anfragen an einen
 /// Landesdienst auslöst.
-pub const MAX_TILES_PER_REQUEST: usize = 256;
+pub const MAX_TILES_PER_REQUEST: usize = 64;
 
 /// Eine Rasterkachel. Koordinaten sind Vielfache von `size_m` im nativen CRS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

@@ -28,7 +28,7 @@ impl Default for Settings {
             bind: "0.0.0.0:8080".into(),
             valkey_url: None,
             upstream_timeout: Duration::from_secs(30),
-            max_limit: 10_000,
+            max_limit: 5_000,
             default_limit: 5_000,
             public_url: None,
         }
@@ -77,7 +77,7 @@ mod tests {
         assert_eq!(s.clamp_limit(None), 5_000);
         assert_eq!(s.clamp_limit(Some(100)), 100);
         assert_eq!(s.clamp_limit(Some(0)), 1, "0 ergibt keine sinnvolle Antwort");
-        assert_eq!(s.clamp_limit(Some(999_999)), 10_000);
+        assert_eq!(s.clamp_limit(Some(999_999)), 5_000);
     }
 
     #[test]

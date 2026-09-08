@@ -73,7 +73,7 @@ pub async fn api(State(state): State<SharedState>, headers: HeaderMap) -> TypedJ
                         "name": "bbox",
                         "in": "query",
                         "description": "Ausschnitt in WGS84 als min_lon,min_lat,max_lon,max_lat. \
-                                        Höchstens etwa 16 km Kantenlänge; \
+                                        Höchstens etwa 8 km Kantenlänge; \
                                         größere Ausschnitte werden mit 400 abgelehnt.",
                         "required": false,
                         "style": "form",

@@ -290,7 +290,7 @@ pub async fn items(
         warnings.push(
             "Ohne bbox wird nur ein Beispielausschnitt geliefert, damit Clients das \
              Feldschema erkennen können. Für echte Abfragen bitte bbox angeben \
-             (maximal etwa 16 km Kantenlänge)."
+             (maximal etwa 8 km Kantenlänge)."
                 .into(),
         );
     }
