@@ -1,6 +1,6 @@
 # alkis-proxy
 
-Flurstücke aus den Liegenschaftskatastern **aller deutschen Bundesländer** über
+Flurstücke aus den Liegenschaftskatastern **aller deutschen Bundesländer (außer Bayern)** über
 eine einheitliche OGC-API-Features-Schnittstelle. Der Dienst verbirgt, dass
 dahinter 15 verschiedene WFS mit vier Datenschemata, zwei Projektionen und
 unterschiedlichen Ausgabeformaten stecken.
@@ -202,10 +202,14 @@ eintragen. Lädt einmalig, dafür ohne Nachladen beim Zoomen.
 Nicht belegbare Felder sind `null`, nie abwesend. `flur` ist in Baden-Württemberg,
 Sachsen und Hamburg immer `null` — diese Länder führen keine Flureinteilung.
 
+Welche Felder in welchem Land belegt sind, welche Angaben in keinem Dienst
+enthalten sind (Eigentümer, Grundbuch) und was die Adapter bewusst verwerfen,
+steht in [DATENMODELL.md](DATENMODELL.md).
+
 ## Wie die Vereinheitlichung funktioniert
 
-**Vier Quellschemata**, nicht sechzehn: AdV „ALKIS vereinfacht" (11 Länder),
-INSPIRE (SH, SL), Baden-Württemberg (`nora`), Berlin. Das Saarland liefert AVE
+**Vier Quellschemata**, nicht sechzehn: AdV „ALKIS vereinfacht" (12 Länder),
+INSPIRE (SH), Baden-Württemberg (`nora`), Berlin. Das Saarland liefert AVE
 in Großbuchstaben, Bremen unter NAS-Feldnamen — beides deckt derselbe Adapter ab.
 
 **Das Kennzeichen ist die Wahrheit.** Gemarkung, Flur, Zähler und Nenner werden
