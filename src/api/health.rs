@@ -14,7 +14,7 @@ pub async fn health(State(state): State<SharedState>) -> impl IntoResponse {
     Json(json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
-        "cache": if state.cache.is_enabled() { "redis" } else { "aus" },
+        "cache": if state.cache.is_enabled() { "valkey" } else { "aus" },
         "statesConfigured": configured,
         "statesUnavailable": open,
     }))

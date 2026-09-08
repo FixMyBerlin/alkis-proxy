@@ -1,6 +1,6 @@
-//! Redis-Anbindung.
+//! Valkey-Anbindung.
 //!
-//! Der Cache ist bewusst *optional*: Ist Redis nicht erreichbar, arbeitet der
+//! Der Cache ist bewusst *optional*: Ist Valkey nicht erreichbar, arbeitet der
 //! Dienst ohne ihn weiter — langsamer, aber korrekt. Ein Cache-Ausfall darf
 //! nicht zum Dienstausfall werden.
 //!
@@ -17,11 +17,11 @@ use redis::AsyncCommands;
 /// aber um ein Vielfaches schneller als die hohen Stufen.
 const ZSTD_LEVEL: i32 = 3;
 
-pub struct RedisStore {
+pub struct ValkeyStore {
     pool: Pool,
 }
 
-impl RedisStore {
+impl ValkeyStore {
     /// Baut den Verbindungspool auf und prüft ihn mit einem PING.
     ///
     /// Schlägt das fehl, gibt der Aufrufer `None` weiter und der Dienst läuft
@@ -30,18 +30,18 @@ impl RedisStore {
         let cfg = Config::from_url(url);
         let pool = cfg
             .create_pool(Some(Runtime::Tokio1))
-            .map_err(|e| format!("Redis-Pool: {e}"))?;
+            .map_err(|e| format!("Valkey-Pool: {e}"))?;
 
         let mut conn = pool
             .get()
             .await
-            .map_err(|e| format!("Redis nicht erreichbar: {e}"))?;
+            .map_err(|e| format!("Valkey nicht erreichbar: {e}"))?;
         redis::cmd("PING")
             .query_async::<String>(&mut conn)
             .await
-            .map_err(|e| format!("Redis antwortet nicht: {e}"))?;
+            .map_err(|e| format!("Valkey antwortet nicht: {e}"))?;
 
-        Ok(RedisStore { pool })
+        Ok(ValkeyStore { pool })
     }
 
     /// Liest und entpackt einen Eintrag. Fehler werden zu `None` — ein kaputter

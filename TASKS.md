@@ -26,9 +26,9 @@ Abgeleitet aus dem genehmigten Plan. Status: `[ ]` offen · `[x]` erledigt · `[
 - [x] `crs/tiles.rs` — 1-km-Kachelraster, BBOX ↔ Kachelliste
 - [x] Verifikation: MV, SN, TH liefern über den nativen Pfad Features (live geprüft)
 
-## 4. OGC API Features + Redis-Cache ✅
+## 4. OGC API Features + Valkey-Cache ✅
 - [x] `upstream/client.rs`, `fetch.rs` — reqwest-Pool, GetFeature, OGC-Exceptions
-- [x] `cache/store.rs` — deadpool-redis, zstd
+- [x] `cache/store.rs` — deadpool-redis (RESP-kompatibel zu Valkey), zstd
 - [x] `cache/tile_cache.rs` — Read-Through, Truncation-Split, Dedupe
 - [x] `api/` — /collections, /items, /items/{id}
 - [x] Negative Ergebnisse cachen
@@ -41,7 +41,7 @@ Abgeleitet aus dem genehmigten Plan. Status: `[ ]` offen · `[x]` erledigt · `[
 
 ## 6. Docker  ⏸ (auf Wunsch zurückgestellt)
 - [ ] Multi-Stage-Dockerfile (musl-static → distroless)
-- [ ] docker-compose.yml (Service + Redis, LRU + appendonly)
+- [ ] docker-compose.yml (Service + Valkey, LRU + appendonly)
 - [ ] ENV-Konfiguration
 
 ## 7. Audit-Binary  ⏸ (auf Wunsch zurückgestellt)

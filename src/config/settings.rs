@@ -9,8 +9,8 @@ use std::time::Duration;
 pub struct Settings {
     /// Adresse, auf der der HTTP-Server lauscht.
     pub bind: String,
-    /// Redis-URL. Fehlt sie, läuft der Dienst ohne Cache.
-    pub redis_url: Option<String>,
+    /// Valkey-URL. Fehlt sie, läuft der Dienst ohne Cache.
+    pub valkey_url: Option<String>,
     /// Zeitlimit für eine einzelne Anfrage an einen Landesdienst.
     pub upstream_timeout: Duration,
     /// Obergrenze für `limit` an der API.
@@ -26,7 +26,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             bind: "0.0.0.0:8080".into(),
-            redis_url: None,
+            valkey_url: None,
             upstream_timeout: Duration::from_secs(30),
             max_limit: 10_000,
             default_limit: 5_000,
@@ -42,7 +42,7 @@ impl Settings {
         let d = Settings::default();
         Settings {
             bind: env("ALKIS_BIND").unwrap_or(d.bind),
-            redis_url: env("ALKIS_REDIS_URL"),
+            valkey_url: env("ALKIS_VALKEY_URL"),
             upstream_timeout: env("ALKIS_UPSTREAM_TIMEOUT_SECS")
                 .and_then(|v| v.parse().ok())
                 .map(Duration::from_secs)
@@ -84,6 +84,6 @@ mod tests {
     fn vorgaben_sind_plausibel() {
         let s = Settings::default();
         assert!(s.default_limit <= s.max_limit);
-        assert!(s.redis_url.is_none(), "ohne ENV kein Cache");
+        assert!(s.valkey_url.is_none(), "ohne ENV kein Cache");
     }
 }

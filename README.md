@@ -17,24 +17,25 @@ aussichtsreichste Kandidat und noch zu prüfen.
 ## Starten
 
 ```bash
-docker run -d --name alkis-redis -p 6399:6379 redis:7-alpine \
-  redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+docker run -d --name alkis-valkey -p 6399:6379 valkey/valkey:8-alpine \
+  valkey-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
 
 cargo build --release
-ALKIS_BIND=127.0.0.1:8099 ALKIS_REDIS_URL=redis://127.0.0.1:6399 \
+ALKIS_BIND=127.0.0.1:8099 ALKIS_VALKEY_URL=redis://127.0.0.1:6399 \
   ./target/release/alkis-proxy
 ```
 
-Redis ist optional — ohne Cache läuft der Dienst langsamer, aber korrekt. Ob er
+Valkey ist optional — ohne Cache läuft der Dienst langsamer, aber korrekt. Ob er
 tatsächlich angebunden ist, sagt beim Start die Zeile `Cache angebunden`; sonst
 steht dort eine Warnung. Der Port im `docker run` oben ist **6399**, nicht der
-Redis-Standardport — `ALKIS_REDIS_URL` muss dazu passen, sonst läuft der Dienst
-still ohne Cache weiter.
+Valkey-Standardport — `ALKIS_VALKEY_URL` muss dazu passen, sonst läuft der Dienst
+still ohne Cache weiter. Der URL-Schema-Präfix bleibt `redis://` — Valkey ist
+protokollkompatibel zu Redis, es gibt kein eigenes Schema.
 
 Im Hintergrund, mit Protokoll in eine Datei:
 
 ```bash
-setsid env ALKIS_BIND=127.0.0.1:8099 ALKIS_REDIS_URL=redis://127.0.0.1:6399 \
+setsid env ALKIS_BIND=127.0.0.1:8099 ALKIS_VALKEY_URL=redis://127.0.0.1:6399 \
   RUST_LOG=alkis_proxy=debug,tower_http=debug \
   ./target/release/alkis-proxy >> /tmp/alkis.log 2>&1 < /dev/null &
 ```
@@ -56,7 +57,7 @@ QGIS tatsächlich anfragt.
 | Variable | Vorgabe | Bedeutung |
 |---|---|---|
 | `ALKIS_BIND` | `0.0.0.0:8080` | Adresse des HTTP-Servers |
-| `ALKIS_REDIS_URL` | – | Redis-URL; fehlt sie, läuft der Dienst ohne Cache |
+| `ALKIS_VALKEY_URL` | – | Valkey-URL; fehlt sie, läuft der Dienst ohne Cache |
 | `ALKIS_UPSTREAM_TIMEOUT_SECS` | `30` | Zeitlimit je Landesdienst |
 | `ALKIS_DEFAULT_LIMIT` | `5000` | Vorgabe für `limit` |
 | `ALKIS_MAX_LIMIT` | `10000` | Obergrenze für `limit` |
