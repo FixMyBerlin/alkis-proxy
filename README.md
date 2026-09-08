@@ -24,9 +24,8 @@ docker compose up -d
 ```
 
 Danach liegt der Dienst auf <http://127.0.0.1:8080>; ein anderer Port geht über
-`ALKIS_PORT` in der `.env`. Compose startet zusätzlich Valkey mit LRU-Verdrängung
-und `appendonly`, verbindet beides und wartet mit dem Dienst, bis der Cache
-antwortet.
+`ALKIS_PORT` in der `.env`. Der Cache läuft eingebettet im Dienst selbst
+(redb, eine Datei unter `/data` im Container)
 
 Das Image ist zweistufig gebaut: statisch gegen musl übersetzt, dann in ein
 `distroless`-Image gelegt. Es enthält nur die Binärdatei — knapp 9 MB, keine
@@ -40,20 +39,16 @@ Weil im Image keine Shell steckt, hat es bewusst keine `HEALTHCHECK`-Anweisung.
 ### Ohne Docker
 
 ```bash
-docker run -d --name alkis-valkey -p 6399:6379 valkey/valkey:8-alpine \
-  valkey-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
-
 cargo build --release
-ALKIS_BIND=127.0.0.1:8099 ALKIS_VALKEY_URL=redis://127.0.0.1:6399 \
+ALKIS_BIND=127.0.0.1:8099 ALKIS_CACHE_PATH=./cache.redb ALKIS_CACHE_MAX_SIZE=2gb \
   ./target/release/alkis-proxy
 ```
 
-Valkey ist optional — ohne Cache läuft der Dienst langsamer, aber korrekt. Ob er
-tatsächlich angebunden ist, sagt beim Start die Zeile `Cache angebunden`; sonst
-steht dort eine Warnung. Der Port im `docker run` oben ist **6399**, nicht der
-Valkey-Standardport — `ALKIS_VALKEY_URL` muss dazu passen, sonst läuft der Dienst
-still ohne Cache weiter. Der URL-Schema-Präfix bleibt `redis://` — Valkey ist
-protokollkompatibel zu Redis, es gibt kein eigenes Schema.
+Der Cache ist optional — ohne `ALKIS_CACHE_PATH` läuft der Dienst langsamer, aber
+korrekt, ganz ohne weiteren Prozess. Ob er tatsächlich angebunden ist, sagt beim
+Start die Zeile `Cache angebunden`; sonst steht dort eine Warnung. Die Datei
+unter `ALKIS_CACHE_PATH` legt der Dienst selbst an, das Verzeichnis muss aber
+existieren und beschreibbar sein.
 
 `RUST_LOG=alkis_proxy=debug` protokolliert jede eingehende Anfrage mitsamt
 `bbox` und Client — das ist die Stelle, an der man sieht, welchen Ausschnitt
@@ -64,7 +59,8 @@ QGIS tatsächlich anfragt.
 | Variable | Vorgabe | Bedeutung |
 |---|---|---|
 | `ALKIS_BIND` | `0.0.0.0:8080` | Adresse des HTTP-Servers |
-| `ALKIS_VALKEY_URL` | – | Valkey-URL; fehlt sie, läuft der Dienst ohne Cache |
+| `ALKIS_CACHE_PATH` | – | Pfad der redb-Cache-Datei; fehlt er, läuft der Dienst ohne Cache |
+| `ALKIS_CACHE_MAX_SIZE` | `2gb` | Obergrenze der Cache-Datei (`512mb`, `32gb`, oder Byte-Zahl); bei Überschreiten weichen die ältesten Kacheln |
 | `ALKIS_UPSTREAM_TIMEOUT_SECS` | `30` | Zeitlimit je Landesdienst |
 | `ALKIS_DEFAULT_LIMIT` | `5000` | Vorgabe für `limit` |
 | `ALKIS_MAX_LIMIT` | `5000` | Obergrenze für `limit` |
@@ -77,7 +73,6 @@ Nur für `docker compose`, nicht vom Dienst selbst gelesen:
 | Variable | Vorgabe | Bedeutung |
 |---|---|---|
 | `ALKIS_PORT` | `8080` | Port auf dem Host; im Container immer 8080 |
-| `ALKIS_CACHE_MAXMEMORY` | `512mb` | Speichergrenze des Valkey-Caches |
 
 ## Endpunkte
 

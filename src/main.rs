@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use alkis_proxy::api::{self, metrics::Metrics, AppState};
-use alkis_proxy::cache::{TileCache, ValkeyStore};
+use alkis_proxy::cache::{RedbStore, TileCache};
 use alkis_proxy::config::{states, Settings};
 use alkis_proxy::upstream::{CircuitBreaker, UpstreamClient};
 use tower_http::compression::CompressionLayer;
@@ -20,21 +20,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = Settings::from_env();
 
-    // Der Cache ist optional: Ohne Valkey läuft der Dienst langsamer, aber
+    // Der Cache ist optional: Ohne ihn läuft der Dienst langsamer, aber
     // korrekt weiter. Ein Cache-Ausfall darf kein Dienstausfall sein.
-    let store = match &settings.valkey_url {
-        Some(url) => match ValkeyStore::connect(url).await {
+    let store = match &settings.cache_path {
+        Some(path) => match RedbStore::open(path, settings.cache_max_bytes) {
             Ok(s) => {
-                tracing::info!("Cache angebunden");
+                tracing::info!(pfad = %path.display(), "Cache angebunden");
                 Some(s)
             }
             Err(e) => {
-                tracing::warn!(error = %e, "Valkey nicht erreichbar — Dienst läuft ohne Cache");
+                tracing::warn!(error = %e, "Cache-Datei nicht nutzbar — Dienst läuft ohne Cache");
                 None
             }
         },
         None => {
-            tracing::warn!("ALKIS_VALKEY_URL nicht gesetzt — Dienst läuft ohne Cache");
+            tracing::warn!("ALKIS_CACHE_PATH nicht gesetzt — Dienst läuft ohne Cache");
             None
         }
     };

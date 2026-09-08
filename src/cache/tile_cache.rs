@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::cache::ValkeyStore;
+use crate::cache::RedbStore;
 use crate::config::StateConfig;
 use crate::crs::reproject::{bbox_to_utm, Bbox};
 use crate::crs::tiles::{self, Tile};
@@ -58,11 +58,11 @@ pub struct FetchOutcome {
 }
 
 pub struct TileCache {
-    store: Option<ValkeyStore>,
+    store: Option<RedbStore>,
 }
 
 impl TileCache {
-    pub fn new(store: Option<ValkeyStore>) -> Self {
+    pub fn new(store: Option<RedbStore>) -> Self {
         TileCache { store }
     }
 

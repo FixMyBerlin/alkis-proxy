@@ -34,14 +34,22 @@ RUN touch src/main.rs src/lib.rs \
  && cargo build --release --locked \
  && strip target/release/alkis-proxy
 
+# Verzeichnis für die redb-Cache-Datei mit korrektem Besitzer vorbereiten:
+# Das distroless-Image hat keine Shell, in der sich das nachträglich per
+# `mkdir`/`chown` erledigen ließe. Ein Docker-Volume, das beim ersten Start
+# hierauf gemountet wird, übernimmt Inhalt und Rechte dieses Verzeichnisses.
+RUN mkdir -p /empty-data && chown 65532:65532 /empty-data
+
 # `static` genügt, weil die Binärdatei statisch gegen musl gebunden ist.
 # `nonroot` setzt UID 65532 — der Dienst braucht keine Rechte im Container.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /build/target/release/alkis-proxy /usr/local/bin/alkis-proxy
+COPY --from=builder --chown=65532:65532 /empty-data /data
 
 # Innerhalb des Containers immer 8080; nach außen bildet Compose das ab.
 ENV ALKIS_BIND=0.0.0.0:8080 \
+    ALKIS_CACHE_PATH=/data/cache.redb \
     RUST_LOG=alkis_proxy=info,tower_http=warn
 EXPOSE 8080
 
