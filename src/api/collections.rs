@@ -9,6 +9,7 @@ use axum::http::HeaderMap;
 use axum::Json;
 use serde_json::{json, Value};
 
+use crate::api::features::current_year;
 use crate::api::{base_url, SharedState, TypedJson, SCHEMA_JSON};
 use crate::config::states;
 
@@ -103,13 +104,16 @@ pub async fn describe(State(state): State<SharedState>, headers: HeaderMap) -> J
 /// 2.0 oder CC BY 4.0 steht und damit Namensnennung verlangt. Clients können
 /// die Liste unmittelbar für den Kartenhinweis verwenden.
 fn collection_doc(state: &SharedState, base: &str) -> Value {
+    let year = current_year();
     let sources: Vec<Value> = states::all()
         .iter()
         .filter(|s| s.endpoint.is_some())
         .map(|s| {
             let attribution = s.attribution.map(|a| {
                 json!({
-                    "text": a.text,
+                    // Der fertige Vermerk, nicht die Vorlage: Ein Client soll
+                    // ihn übernehmen können, ohne selbst ein Jahr einzusetzen.
+                    "text": a.notice(year),
                     "url": a.url,
                     "license": a.license.label(),
                     "licenseUrl": a.license.url(),
@@ -118,6 +122,15 @@ fn collection_doc(state: &SharedState, base: &str) -> Value {
             });
             json!({ "state": s.key.code(), "label": s.label, "attribution": attribution })
         })
+        .collect();
+
+    // Eine Zeile über alle angebundenen Länder, fertig für den Kartenhinweis.
+    // `sources` bleibt daneben stehen, weil nur dort steht, welcher Vermerk zu
+    // welchem Land gehört und welcher rechtlich zwingend ist.
+    let alle: Vec<_> = states::all()
+        .iter()
+        .filter(|s| s.endpoint.is_some())
+        .map(|s| s.key)
         .collect();
 
     json!({
@@ -137,6 +150,7 @@ fn collection_doc(state: &SharedState, base: &str) -> Value {
             }
         },
         "limits": { "default": state.settings.default_limit, "maximum": state.settings.max_limit },
+        "attribution": states::attribution_line(&alle, year),
         "sources": sources,
         "links": [
             { "rel": "self", "type": "application/json", "title": "Beschreibung", "href": format!("{base}/collections/flurstuecke") },

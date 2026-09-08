@@ -329,6 +329,15 @@ pub async fn items(
         // ein Ergebnis aus drei von vier Ländern ist meist brauchbar.
         body["warnings"] = json!(warnings);
     }
+    // Der Quellenvermerk nennt die Länder, die in dieser Antwort tatsächlich
+    // vorkommen — abgelesen an den Features, nicht an den befragten Diensten.
+    // Der Unterschied ist keiner auf dem Papier: Die Hüllboxen des Routings
+    // überlappen, ein Kölner Ausschnitt befragt deshalb auch Rheinland-Pfalz.
+    // Würde man `available` nehmen, stünde unter einer reinen NRW-Karte ein
+    // Land, von dem kein einziges Flurstück stammt.
+    if let Some(line) = states::attribution_line(&beteiligte_laender(&body), current_year()) {
+        body["attribution"] = json!(line);
+    }
     Ok(TypedJson(GEOJSON, body))
 }
 
@@ -403,6 +412,24 @@ fn empty_collection(page: &Page, matched: Option<usize>, hint: Option<&str>) -> 
     v
 }
 
+/// Die Bundesländer, aus denen die Features dieser Antwort stammen.
+///
+/// Reihenfolge und Wiederholungen spielen keine Rolle: `attribution_line`
+/// sortiert nach Länderschlüssel und nennt jedes Land einmal.
+fn beteiligte_laender(body: &Value) -> Vec<StateKey> {
+    let mut keys: Vec<StateKey> = body["features"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|f| f["properties"]["bundesland"].as_str())
+        .filter_map(StateKey::from_code)
+        .collect();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
 /// Die BBOX so, wie ein Client sie schicken würde — damit eine Logzeile sich
 /// unverändert in eine `curl`-Anfrage kopieren lässt.
 fn bbox_text(b: Bbox) -> String {
@@ -426,6 +453,18 @@ fn trefferquote(hits: usize, total: usize) -> String {
         return "-".into();
     }
     format!("{:.0}%", hits as f64 * 100.0 / total as f64)
+}
+
+/// Das laufende Jahr (UTC).
+///
+/// Mehrere Länder verlangen im Quellenvermerk das Jahr des Datenbezugs. Für
+/// einen Dienst, der live durchreicht, ist das das Jahr der Anfrage.
+pub(crate) fn current_year() -> i64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    civil_from_days((secs / 86_400) as i64).0
 }
 
 /// Zeitstempel im Format, das OGC API Features für `timeStamp` vorsieht.
@@ -682,6 +721,27 @@ mod tests {
         assert!(matches!(err, ApiError::TooLarge(_)));
         // Die Meldung muss sagen, was zu tun ist.
         assert!(err.to_string().contains("heranzoomen"), "{err}");
+    }
+
+    #[test]
+    fn quellenvermerk_folgt_den_features_nicht_den_befragten_diensten() {
+        // Ein Kölner Ausschnitt befragt wegen überlappender Hüllboxen auch
+        // Rheinland-Pfalz. Geliefert hat nur NRW — und nur NRW gehört in den
+        // Quellenvermerk.
+        let body = json!({
+            "features": [
+                { "properties": { "bundesland": "NW" } },
+                { "properties": { "bundesland": "NW" } }
+            ]
+        });
+        assert_eq!(beteiligte_laender(&body), vec![StateKey::Nw]);
+    }
+
+    #[test]
+    fn ohne_features_kein_quellenvermerk() {
+        assert!(beteiligte_laender(&json!({ "features": [] })).is_empty());
+        // Und eine Antwort ohne das Feld darf nicht in Panik geraten.
+        assert!(beteiligte_laender(&json!({})).is_empty());
     }
 
     #[test]

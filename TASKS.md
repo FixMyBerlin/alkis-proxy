@@ -97,5 +97,10 @@ QGIS-OAPIF-Providers (`QgsOapifProvider::init`, `QgsOapifLandingPageRequest`).
 
 ## Offene Punkte
 - [ ] Bayern: INSPIRE-WFS-Endpunkt verifizieren
-- [ ] Attribution je Land zusammentragen (DL-DE BY 2.0 / Zero 2.0 / CC BY 4.0)
+- [x] Attribution je Land zusammentragen — alle 15 Länder belegt, Quellen sind
+      `ows:Fees`/`ows:AccessConstraints` der Dienste (HH und SL aus dem
+      Metadatensatz, weil ihre Capabilities nichts nennen). 11 Länder verlangen
+      Namensnennung, 4 stehen unter Zero. Bremen korrigiert: Rechteinhaber ist
+      „GeoBremen", nicht LGLN. Neu: `attribution` in jeder `items`-Antwort,
+      beschränkt auf die Länder, aus denen die Features stammen
 - [ ] Saarland: 5xx-Verhalten beobachten

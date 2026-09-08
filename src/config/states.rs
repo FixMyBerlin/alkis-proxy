@@ -171,13 +171,40 @@ impl License {
     pub fn requires_attribution(self) -> bool {
         matches!(self, License::DlDeBy20 | License::CcBy40)
     }
+
+    /// Ob die Lizenz verlangt, auf Bearbeitungen der Daten hinzuweisen.
+    ///
+    /// Betrifft diesen Dienst unmittelbar: Er gibt die Geometrien nicht
+    /// unverändert weiter, sondern rechnet sie aus dem nativen UTM nach WGS84
+    /// um und rundet auf sieben Nachkommastellen.
+    pub fn requires_change_notice(self) -> bool {
+        matches!(self, License::DlDeBy20 | License::CcBy40)
+    }
 }
 
+/// Quellenvermerk eines Landes.
+///
+/// `text` ist die Namensnennung genau in der Form, die der jeweilige Dienst
+/// verlangt — keine selbst gewählte Kurzform. Die Formulierungen stammen aus
+/// `ows:Fees` und `ows:AccessConstraints` der GetCapabilities-Antworten,
+/// ergänzt um die Nutzungsbedingungen der Länder, wo der Dienst selbst nichts
+/// nennt (HH, SL). Stand der Prüfung: 2026-09-08.
+///
+/// `{jahr}` steht für das Jahr des Datenbezugs. Sechs Länder verlangen es
+/// ausdrücklich; eingesetzt wird es erst beim Ausliefern, weil es sich auf den
+/// Abruf bezieht und nicht auf den Katalog.
 #[derive(Debug, Clone, Copy)]
 pub struct Attribution {
     pub text: &'static str,
     pub url: &'static str,
     pub license: License,
+}
+
+impl Attribution {
+    /// Der fertige Quellenvermerk für ein Jahr des Datenbezugs.
+    pub fn notice(&self, year: i64) -> String {
+        self.text.replace("{jahr}", &year.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -217,7 +244,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© GeoBasis-DE/LVermGeo SH",
+            text: "© GeoBasis-DE/LVermGeo SH/CC BY 4.0",
             url: "https://www.gdi-sh.de",
             license: License::CcBy40,
         }),
@@ -234,7 +261,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© LGV Hamburg",
+            text: "Freie und Hansestadt Hamburg, Landesbetrieb Geoinformation und Vermessung (LGV)",
             url: "https://www.geoportal-hamburg.de",
             license: License::DlDeBy20,
         }),
@@ -251,7 +278,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© LGLN",
+            text: "LGLN ({jahr}) Creative Commons Namensnennung – 4.0 International (CC BY 4.0)",
             url: "https://opendata.lgln.niedersachsen.de",
             license: License::CcBy40,
         }),
@@ -268,7 +295,9 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© LGLN",
+            // Nicht LGLN: Der Dienst läuft zwar auf deren Host, als
+            // Rechteinhaber nennt er aber ausdrücklich „GeoBremen".
+            text: "GeoBremen ({jahr}) Creative Commons Namensnennung – 4.0 International (CC BY 4.0)",
             url: "https://opendata.lgln.niedersachsen.de",
             license: License::CcBy40,
         }),
@@ -285,7 +314,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© Geobasis-DE/NRW",
+            text: "© GeoBasis-DE/NRW",
             url: "https://www.geoportal.nrw",
             license: License::DlDeZero20,
         }),
@@ -320,7 +349,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© GeoBasis-DE/LVermGeoRP",
+            text: "© GeoBasis-DE / LVermGeoRP ({jahr}), dl-de/by-2-0",
             url: "https://www.lvermgeo.rlp.de/geodaten-geoshop/open-data",
             license: License::DlDeBy20,
         }),
@@ -337,7 +366,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: GeoJson,
         }),
         attribution: Some(Attribution {
-            text: "© LGL BW",
+            text: "LGL-BW ({jahr}) Datenlizenz Deutschland - Namensnennung - Version 2.0",
             url: "https://www.lgl-bw.de",
             license: License::DlDeBy20,
         }),
@@ -364,7 +393,14 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25832,
             output_format: ServerDefault,
         }),
-        attribution: None,
+        attribution: Some(Attribution {
+            // Der ArcGIS-Dienst liefert weder Fees noch AccessConstraints;
+            // Lizenz und Quellenvermerk stehen in der Geobasisdatenübersicht
+            // des Geoportals und im Metadatensatz.
+            text: "© GeoBasis DE/LVGL-SL ({jahr})",
+            url: "https://geoportal.saarland.de",
+            license: License::DlDeBy20,
+        }),
         note: Some(
             "ArcGIS-Server: lehnt explizite OUTPUTFORMAT-Angaben ab und schreibt \
              die Feldnamen groß. Zeigt zeitweise 5xx; Circuit Breaker greift.",
@@ -398,7 +434,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© GeoBasis-DE/LGB",
+            text: "© GeoBasis-DE/LGB, dl-de/by-2-0",
             url: "https://geoportal.brandenburg.de",
             license: License::DlDeBy20,
         }),
@@ -415,7 +451,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© GeoBasis-DE/M-V",
+            text: "© GeoBasis-DE/M-V/CC BY 4.0",
             url: "https://www.laiv-mv.de/Geoinformation/",
             license: License::CcBy40,
         }),
@@ -432,7 +468,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© GeoSN",
+            text: "GeoSN, dl-de/by-2-0",
             url: "https://www.landesvermessung.sachsen.de",
             license: License::DlDeBy20,
         }),
@@ -449,7 +485,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© GeoBasis-DE/LVermGeo ST",
+            text: "© GeoBasis-DE / LVermGeo ST, dl-de/by-2-0",
             url: "https://www.lvermgeo.sachsen-anhalt.de/de/gdp-open-data.html",
             license: License::DlDeBy20,
         }),
@@ -466,7 +502,7 @@ pub const STATES: &[StateConfig] = &[
             output_format: Gml321,
         }),
         attribution: Some(Attribution {
-            text: "© GDI-Th",
+            text: "© GDI-Th, dl-de/by-2-0",
             url: "https://geoportal.thueringen.de",
             license: License::DlDeBy20,
         }),
@@ -476,6 +512,35 @@ pub const STATES: &[StateConfig] = &[
 
 pub fn all() -> &'static [StateConfig] {
     STATES
+}
+
+/// Der Quellenvermerk für eine Karte, die Daten dieser Länder zeigt.
+///
+/// Die Länder erscheinen in der Reihenfolge des Länderschlüssels, nicht in der
+/// des Aufrufers — der Vermerk soll bei gleicher Länderkombination gleich
+/// lauten, egal in welcher Reihenfolge die Dienste geantwortet haben.
+///
+/// Der Zusatz „(Daten bearbeitet)" ist keine Höflichkeit: Der Dienst rechnet
+/// die Geometrien aus dem nativen UTM nach WGS84 um und rundet sie, und sowohl
+/// DL-DE BY 2.0 als auch CC BY 4.0 verlangen einen Hinweis auf solche
+/// Änderungen. Er entfällt, wo nur Zero-lizenzierte Länder beteiligt sind.
+pub fn attribution_line(keys: &[StateKey], year: i64) -> Option<String> {
+    let mut notices = Vec::new();
+    let mut bearbeitet = false;
+    for cfg in STATES.iter().filter(|s| keys.contains(&s.key)) {
+        if let Some(a) = cfg.attribution {
+            notices.push(a.notice(year));
+            bearbeitet |= a.license.requires_change_notice();
+        }
+    }
+    if notices.is_empty() {
+        return None;
+    }
+    let mut line = notices.join(" · ");
+    if bearbeitet {
+        line.push_str(" (Daten bearbeitet)");
+    }
+    Some(line)
 }
 
 pub fn get(key: StateKey) -> &'static StateConfig {
@@ -545,6 +610,68 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Jedes Land mit Dienst muss einen Quellenvermerk haben. Ohne ihn wäre die
+    /// Nutzung der Daten in den BY- und CC-BY-Ländern schlicht nicht zulässig.
+    #[test]
+    fn jedes_land_mit_dienst_hat_eine_attribution() {
+        let ohne: Vec<_> = STATES
+            .iter()
+            .filter(|s| s.endpoint.is_some() && s.attribution.is_none())
+            .map(|s| s.label)
+            .collect();
+        assert!(ohne.is_empty(), "ohne Quellenvermerk: {ohne:?}");
+    }
+
+    #[test]
+    fn jahresplatzhalter_wird_ersetzt() {
+        let ni = get(StateKey::Ni).attribution.expect("Niedersachsen");
+        assert!(ni.text.contains("{jahr}"), "Niedersachsen verlangt das Bezugsjahr");
+        let vermerk = ni.notice(2026);
+        assert!(vermerk.contains("LGLN (2026)"), "{vermerk}");
+        assert!(!vermerk.contains("{jahr}"), "{vermerk}");
+    }
+
+    /// Kein Platzhalter darf ungefüllt nach außen gelangen.
+    #[test]
+    fn kein_vermerk_behaelt_einen_platzhalter() {
+        for s in STATES {
+            if let Some(a) = s.attribution {
+                assert!(!a.notice(2026).contains('{'), "{}: {}", s.label, a.notice(2026));
+            }
+        }
+    }
+
+    #[test]
+    fn quellenvermerk_zeile_nennt_die_beteiligten_laender() {
+        let line = attribution_line(&[StateKey::Nw, StateKey::He], 2026).unwrap();
+        assert!(line.contains("GeoBasis-DE/NRW"), "{line}");
+        assert!(line.contains("GeoBasis-DE/HVBG"), "{line}");
+        // Beide stehen unter Zero — kein Bearbeitungshinweis nötig.
+        assert!(!line.contains("bearbeitet"), "{line}");
+    }
+
+    #[test]
+    fn bearbeitungshinweis_erscheint_bei_namensnennung() {
+        // Der Dienst projiziert um und rundet; BY 2.0 verlangt den Hinweis.
+        let line = attribution_line(&[StateKey::Bb], 2026).unwrap();
+        assert!(line.ends_with("(Daten bearbeitet)"), "{line}");
+    }
+
+    /// Die Zeile hängt an der Länderauswahl, nicht an deren Reihenfolge.
+    #[test]
+    fn quellenvermerk_zeile_ist_reihenfolgeunabhaengig() {
+        let a = attribution_line(&[StateKey::Nw, StateKey::He], 2026);
+        let b = attribution_line(&[StateKey::He, StateKey::Nw], 2026);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn ohne_bekanntes_land_keine_zeile() {
+        assert_eq!(attribution_line(&[], 2026), None);
+        // Bayern hat keinen Dienst und damit auch keinen Quellenvermerk.
+        assert_eq!(attribution_line(&[StateKey::By], 2026), None);
     }
 
     #[test]

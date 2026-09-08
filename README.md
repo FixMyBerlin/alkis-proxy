@@ -159,6 +159,24 @@ eintragen. Lädt einmalig, dafür ohne Nachladen beim Zoomen.
 Welche Felder in welchem Land belegt sind, welche Angaben in keinem Dienst
 enthalten sind und was die Adapter bewusst verwerfen, steht in [DATENMODELL.md](DATENMODELL.md).
 
+## Quellen und Lizenzen
+
+Die Daten gehören den Ländern. Elf der fünfzehn Quellen verlangen eine
+Namensnennung — wer die Flurstücke veröffentlicht, muss den Quellenvermerk der
+beteiligten Länder mitführen.
+
+Abschreiben muss man ihn nicht: Jede `items`-Antwort trägt ein Feld
+`attribution` mit genau den Ländern, aus denen ihre Flurstücke stammen.
+
+```bash
+curl -s "http://127.0.0.1:8080/collections/flurstuecke/items?bbox=9.176,48.774,9.180,48.778" \
+  | jq -r .attribution
+# LGL-BW (2026) Datenlizenz Deutschland - Namensnennung - Version 2.0 (Daten bearbeitet)
+```
+
+Lizenz und geforderten Vermerk je Land führt
+[DATENMODELL.md](DATENMODELL.md#lizenz-und-quellenvermerk-je-land) auf.
+
 ## Wie die Vereinheitlichung funktioniert
 
 **Vier Quellschemata**: AdV „ALKIS vereinfacht" (12 Länder),
