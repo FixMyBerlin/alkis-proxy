@@ -16,6 +16,29 @@ aussichtsreichste Kandidat und noch zu prüfen.
 
 ## Starten
 
+### Mit Docker
+
+```bash
+cp .env.example .env      # optional, alle Werte haben Vorgaben
+docker compose up -d
+```
+
+Danach liegt der Dienst auf <http://127.0.0.1:8080>; ein anderer Port geht über
+`ALKIS_PORT` in der `.env`. Compose startet zusätzlich Valkey mit LRU-Verdrängung
+und `appendonly`, verbindet beides und wartet mit dem Dienst, bis der Cache
+antwortet.
+
+Das Image ist zweistufig gebaut: statisch gegen musl übersetzt, dann in ein
+`distroless`-Image gelegt. Es enthält nur die Binärdatei — knapp 9 MB, keine
+Shell, kein Paketmanager, und der Prozess läuft als `nonroot`. Ein CA-Bundle
+braucht es nicht: reqwest ist auf rustls mit gebündeltem Wurzelspeicher
+eingestellt.
+
+Weil im Image keine Shell steckt, hat es bewusst keine `HEALTHCHECK`-Anweisung.
+`GET /health` prüft man von außen.
+
+### Ohne Docker
+
 ```bash
 docker run -d --name alkis-valkey -p 6399:6379 valkey/valkey:8-alpine \
   valkey-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
@@ -44,8 +67,17 @@ QGIS tatsächlich anfragt.
 | `ALKIS_VALKEY_URL` | – | Valkey-URL; fehlt sie, läuft der Dienst ohne Cache |
 | `ALKIS_UPSTREAM_TIMEOUT_SECS` | `30` | Zeitlimit je Landesdienst |
 | `ALKIS_DEFAULT_LIMIT` | `5000` | Vorgabe für `limit` |
-| `ALKIS_MAX_LIMIT` | `10000` | Obergrenze für `limit` |
+| `ALKIS_MAX_LIMIT` | `5000` | Obergrenze für `limit` |
+| `ALKIS_PUBLIC_URL` | – | Nach außen sichtbare Basis-URL; nur nötig hinter einem Reverse Proxy |
+| `ALKIS_DISABLE_COMPRESSION` | – | Gesetzt und nicht leer: keine Antwortkompression |
 | `RUST_LOG` | `alkis_proxy=info` | Protokollierung |
+
+Nur für `docker compose`, nicht vom Dienst selbst gelesen:
+
+| Variable | Vorgabe | Bedeutung |
+|---|---|---|
+| `ALKIS_PORT` | `8080` | Port auf dem Host; im Container immer 8080 |
+| `ALKIS_CACHE_MAXMEMORY` | `512mb` | Speichergrenze des Valkey-Caches |
 
 ## Endpunkte
 

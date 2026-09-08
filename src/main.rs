@@ -51,7 +51,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Kompression spart bei großen FeatureCollections viel Bandbreite, kann
     // aber bei manchen Clients Probleme machen — deshalb abschaltbar.
     let mut app = api::router(state).layer(TraceLayer::new_for_http());
-    if std::env::var("ALKIS_DISABLE_COMPRESSION").is_err() {
+    // Auf Vorhandensein geprüft, nicht auf den Wert — aber ein leerer Wert
+    // zählt als nicht gesetzt. Sonst schaltete `ALKIS_DISABLE_COMPRESSION=`
+    // aus einer docker-compose.yml die Kompression ungewollt ab, und genau so
+    // setzt Compose eine Variable, für die keine .env einen Wert liefert.
+    let kompression_aus = std::env::var("ALKIS_DISABLE_COMPRESSION")
+        .is_ok_and(|v| !v.trim().is_empty());
+    if !kompression_aus {
         app = app.layer(CompressionLayer::new());
     } else {
         tracing::info!("Antwortkompression ist abgeschaltet");

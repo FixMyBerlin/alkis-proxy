@@ -1,0 +1,52 @@
+# Dienst und Cache zusammen. Alles Einstellbare kommt aus der Umgebung; eine
+# .env neben dieser Datei wird automatisch gelesen (Vorlage: .env.example).
+name: alkis-proxy
+
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    # LRU, damit der Cache bei Erreichen der Grenze die ältesten Kacheln
+    # verwirft statt Schreibfehler zu liefern; appendonly, damit ein Neustart
+    # nicht sämtliche Kacheln verliert und alle Landesdienste erneut belastet.
+    command: >
+      valkey-server
+      --maxmemory ${ALKIS_CACHE_MAXMEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  proxy:
+    build: .
+    image: alkis-proxy:latest
+    ports:
+      # Innen immer 8080, außen frei wählbar.
+      - "${ALKIS_PORT:-8080}:8080"
+    environment:
+      ALKIS_BIND: 0.0.0.0:8080
+      # Der Dienstname aus diesem Verbund, nicht localhost. Das Schema bleibt
+      # redis:// — Valkey ist protokollkompatibel und hat kein eigenes.
+      ALKIS_VALKEY_URL: redis://valkey:6379
+      ALKIS_UPSTREAM_TIMEOUT_SECS: ${ALKIS_UPSTREAM_TIMEOUT_SECS:-30}
+      ALKIS_DEFAULT_LIMIT: ${ALKIS_DEFAULT_LIMIT:-5000}
+      ALKIS_MAX_LIMIT: ${ALKIS_MAX_LIMIT:-5000}
+      # Leer lassen, außer der Dienst steht hinter einem Reverse Proxy, dessen
+      # öffentliche Adresse nicht im Host-Header steht.
+      ALKIS_PUBLIC_URL: ${ALKIS_PUBLIC_URL:-}
+      RUST_LOG: ${RUST_LOG:-alkis_proxy=info,tower_http=warn}
+    depends_on:
+      valkey:
+        # Erst starten, wenn Valkey antwortet — sonst liefe der Dienst
+        # dauerhaft ohne Cache weiter, ohne dass es jemandem auffiele.
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  valkey-data:

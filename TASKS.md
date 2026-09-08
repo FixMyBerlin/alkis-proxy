@@ -39,10 +39,15 @@ Abgeleitet aus dem genehmigten Plan. Status: `[ ]` offen · `[x]` erledigt · `[
 - [x] `/health`, `/metrics` (Prometheus)
 - [x] Teilergebnisse mit `warnings` statt hartem Fehler
 
-## 6. Docker  ⏸ (auf Wunsch zurückgestellt)
-- [ ] Multi-Stage-Dockerfile (musl-static → distroless)
-- [ ] docker-compose.yml (Service + Valkey, LRU + appendonly)
-- [ ] ENV-Konfiguration
+## 6. Docker ✅
+- [x] Multi-Stage-Dockerfile (musl-static → distroless), Image 8,3 MB, `nonroot`
+- [x] docker-compose.yml (Service + Valkey, LRU + appendonly, `service_healthy`)
+- [x] ENV-Konfiguration + `.env.example`; README-Tabelle vervollständigt
+- [x] `ALKIS_DISABLE_COMPRESSION`: leerer Wert zählt jetzt als nicht gesetzt —
+      Compose setzt eine Variable ohne `.env`-Wert auf den leeren String und
+      hätte die Kompression sonst ungewollt abgeschaltet
+- Kein `HEALTHCHECK` im Image: distroless hat keine Shell, mit der sie liefe.
+  `/health` wird von außen geprüft.
 
 ## 7. Audit-Binary  ⏸ (auf Wunsch zurückgestellt)
 - [ ] `bin/audit.rs` — GetCapabilities + GetFeature-Probe je Land

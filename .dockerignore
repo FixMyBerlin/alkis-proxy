@@ -1,0 +1,19 @@
+# Baukontext klein halten: target/ ist mehrere hundert MB und würde bei jedem
+# Bau neu übertragen, obwohl im Container ohnehin frisch übersetzt wird.
+target
+.git
+.gitignore
+
+# Handproben aus dem Wurzelverzeichnis (siehe .gitignore) — teils mehrere MB.
+/*.json
+/*.txt
+
+# Dokumentation und Beispiele gehören nicht ins Image.
+*.md
+examples
+data
+Dockerfile
+docker-compose.yml
+.dockerignore
+.env
+.env.example
