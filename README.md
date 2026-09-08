@@ -219,9 +219,46 @@ oder zwischengespeichert. Bis der Index fertig ist, liefert die Collection die
 Flurstücke bereits, aber ohne Nutzungsart, dazu eine Warnung im Feld
 `warnings` der Antwort.
 
-Für eine deutschlandweite Datei reduziert ein Vorfilter mit
-[osmium-tool](https://osmcode.org/osmium-tool/) die Startzeit erheblich —
-optional, aber empfohlen:
+### Wie Verkehrsflächen und Bahnstrecken erkannt werden
+
+Straßen, Rad- und Fußwege sowie Gleise liegen in OSM als Achsen vor, Flurstücke
+sind Flächen. Übersetzt wird das über einen **Deckungsgrad**: Die Länge der
+Achse *innerhalb* des Flurstücks, multipliziert mit einer aus den Tags
+abgeleiteten Nennbreite, ergibt die beanspruchte Fläche; geteilt durch die
+Flurstücksfläche ist das der Anteil, den das Verkehrsnetz belegt.
+
+Der Nenner ist also das Flurstück, nicht die Achse. Ein Straßenflurstück von
+8 × 200 m, durch das eine `highway=residential` läuft (Nennbreite 6,5 m), kommt
+auf 200 × 6,5 / 1600 = **0,81**; eine Grundstückszufahrt, die 10 m weit in eine
+Parzelle von 600 m² hineinreicht, auf **0,05**.
+
+Ab 0,5 gilt ein Flurstück als Verkehrsfläche — zusätzlich muss es aber
+langgestreckt sein (Polsby-Popper-Kompaktheit `4πA/U²` unter 0,25). Diese
+zweite Bedingung kostet nichts und fängt den wichtigsten Fehlerfall ab: Die
+OSM-Achsen sind gegenüber den ALKIS-Grenzen um einige Meter versetzt und können
+dadurch längs durch eine schmale Nachbarparzelle laufen. Ein Straßenflurstück
+liegt bei 0,12, eine Reihenhausparzelle bei 0,44. Erst ab einem Deckungsgrad
+von 0,9 entfällt die Formbedingung, für Kreuzungs- und Wendehammerflächen.
+
+Erkannte Verkehrsflächen tragen `category: "oeffentlich"`; welche Regel
+gegriffen hat, steht in `rule` — `strasse`, `weg`, `bahnstrecke` oder
+`verkehrsflaeche` (letztere für flächig gemappte Fußgängerzonen). Diese Regeln
+stehen bewusst **hinter** den Gebäuderegeln: Ein Gebäude auf dem Flurstück
+schließt eine Verkehrsfläche sicher aus und ist die dritte Absicherung gegen
+denselben Versatz.
+
+Nicht als Verkehrsfläche zählen Brücken und Tunnel (`bridge`/`tunnel`) — was
+über oder unter einem Flurstück verläuft, sagt nichts über dessen Nutzung —,
+Grundstückszufahrten (`service=driveway`, `parking_aisle`) und
+Straßenbahngleise (`railway=tram`), die meist in der Fahrbahn liegen.
+
+### Vorfilter für große Dateien
+
+Mit dem Verkehrsnetz fällt deutlich mehr in den Index als zuvor: Für
+Baden-Württemberg kommen rund zwei Millionen Ways hinzu, gut 400 MB resident;
+deutschlandweit ist mit 2,5–3 GB zu rechnen. Ein Vorfilter mit
+[osmium-tool](https://osmcode.org/osmium-tool/) reduziert Startzeit und
+Speicher erheblich — optional, aber empfohlen:
 
 ```bash
 osmium tags-filter germany-latest.osm.pbf \
@@ -229,16 +266,22 @@ osmium tags-filter germany-latest.osm.pbf \
   w/amenity=townhall,public_building,courthouse,community_centre,school \
   w/leisure=schoolyard,park,playground \
   w/landuse=industrial,commercial,railway \
-  w/tourism=zoo,hotel w/railway=rail \
+  w/tourism=zoo,hotel \
+  w/railway=rail,light_rail,narrow_gauge \
+  w/highway=motorway,trunk,primary,secondary,tertiary,unclassified,residential,living_street,pedestrian,busway,service,motorway_link,trunk_link,primary_link,secondary_link,tertiary_link,footway,cycleway,path,track,bridleway,steps \
   -o germany-filtered.osm.pbf
 ```
 
 **Bekannte Einschränkungen** (siehe Code-Kommentare in `src/classification/`):
 
-- **Keine dedizierte Straßen-Regel.** Ohne amtlichen Verkehrsnetz-WFS (bewusst
-  nicht verwendet — das wäre ALKIS, nicht OSM) und ohne Puffer um
-  `highway=*`-Linien werden reine Straßenflurstücke meist als `unbekannt`
-  klassifiziert statt als `oeffentlich`. Die größte bekannte Lücke von v1.
+- **Nennbreiten sind Schätzungen.** Die Breite einer Verkehrsfläche wird aus
+  `width`, `lanes` oder der Straßenklasse abgeleitet und liegt damit auf etwa
+  ±50 % genau. Für den Schwellwertvergleich reicht das, für eine
+  Flächenberechnung nicht — `confidence` ist kein Flächenanteil im
+  geometrischen Sinn.
+- **Böschungen und Bankettflurstücke neben Autobahn oder Bahndamm** enthalten
+  keine Achse und bleiben `unbekannt`. Ein Puffer um die Achsen statt der
+  Längenrechnung würde sie mit erfassen, kostet aber deutlich mehr.
 - **Nur einfache Ways, keine Multipolygon-Relationen.** Größere Parks und
   manche Landnutzungsflächen sind in OSM oft als Relation statt als Way
   gemappt und werden nicht erkannt.

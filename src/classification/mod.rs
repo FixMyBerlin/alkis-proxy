@@ -7,6 +7,11 @@
 //! gegen den residenten Index (`rules`) — es wird kein Klassifikationsergebnis
 //! vorberechnet oder gecacht, nur die rohen OSM-Geometrien liegen resident vor.
 //!
+//! Straßen, Wege und Bahnstrecken liegen in OSM als Achsen vor, Flurstücke
+//! sind Flächen. Übersetzt wird das über den Deckungsgrad (Schnittlänge ×
+//! Nennbreite / Flurstücksfläche) statt über einen vorberechneten Puffer —
+//! siehe `rules.rs`, Abschnitt „Verkehrsflächen".
+//!
 //! Referenz für Regel-Logik und Attribute:
 //! `ist-dieses-flurstueck-oeffentlich` (separates Repo). Dessen
 //! Offline-Batch-Pipeline (ganze PBF pro Lauf neu lesen, GeoPackage schreiben)
@@ -38,6 +43,12 @@ pub enum ClassificationError {
 #[derive(Debug)]
 pub struct OsmFeature {
     pub flags: u32,
+    /// Nennbreite der Verkehrsfläche in Dezimetern, aus den Tags abgeleitet
+    /// (`rules::scan_way_tags`). `0` für alles, was nicht als Achse ausgewertet
+    /// wird — Gebäude, Landnutzungsflächen. Zwei Byte je Feature; die
+    /// Alternative wäre, die Breite pro Anfrage erneut aus den Tags zu
+    /// bestimmen, die dafür resident bleiben müssten.
+    pub width_dm: u16,
     pub geom: Geometry<f64>,
 }
 
