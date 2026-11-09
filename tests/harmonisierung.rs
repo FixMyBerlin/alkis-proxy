@@ -98,6 +98,7 @@ fn alle_vier_schemata_liefern_dasselbe_zielschema() {
                 "kreisName",
                 "lagebezeichnung",
                 "nutzung",
+                "nutzungALKIS",
                 "stand",
             ] {
                 assert!(

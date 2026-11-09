@@ -27,6 +27,7 @@ pub fn map(raw: &RawFeature, state: StateKey) -> Result<Parcel, AdapterError> {
         // bezeich absichtlich ausgelassen — enthält den Objekttyp.
         lagebezeichnung: None,
         nutzung: None,
+        nutzung_alkis: None,
         flaeche_qm: raw.number(&["afl"]),
         stand: iso_date(raw.field(&["beg", "zde"])),
         geometry: geometry(raw)?,

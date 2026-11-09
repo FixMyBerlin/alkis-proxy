@@ -63,6 +63,11 @@ pub struct Parcel {
     pub kreis_name: Option<String>,
     pub lagebezeichnung: Option<String>,
     pub nutzung: Option<String>,
+    /// Amtliche tatsächliche Nutzung aus einer eigenen ALKIS-Nutzungsebene —
+    /// anders als `nutzung` (ein Feld der Flurstücksantwort selbst) über einen
+    /// separaten Abruf ermittelt und bei mehreren Nutzungsarten
+    /// semikolongetrennt. Siehe `crate::nutzung` für die Herleitung je Land.
+    pub nutzung_alkis: Option<String>,
     /// Amtliche Fläche in Quadratmetern.
     pub flaeche_qm: Option<f64>,
     /// Stand der Daten als ISO-Datum, soweit die Quelle eines liefert.
@@ -89,6 +94,8 @@ struct ParcelProperties<'a> {
     kreis_name: Option<&'a str>,
     lagebezeichnung: Option<&'a str>,
     nutzung: Option<&'a str>,
+    #[serde(rename = "nutzungALKIS")]
+    nutzung_alkis: Option<&'a str>,
     stand: Option<&'a str>,
 }
 
@@ -132,6 +139,7 @@ impl Parcel {
                 kreis_name: self.kreis_name.as_deref(),
                 lagebezeichnung: self.lagebezeichnung.as_deref(),
                 nutzung: self.nutzung.as_deref(),
+                nutzung_alkis: self.nutzung_alkis.as_deref(),
                 stand: self.stand.as_deref(),
             },
         };
@@ -154,6 +162,7 @@ mod tests {
             kreis_name: None,
             lagebezeichnung: None,
             nutzung: None,
+            nutzung_alkis: None,
             flaeche_qm: Some(632.0),
             stand: Some("2018-11-16".into()),
             geometry: Geometry::from_polygon(vec![vec![
@@ -197,6 +206,11 @@ mod tests {
         assert!(p.get("kreisName").is_some());
         assert!(p["kreisName"].is_null());
         assert!(p["lagebezeichnung"].is_null());
+        // ALKIS bleibt in Großbuchstaben — bewusster Bruch mit camelCase, weil
+        // es ein Akronym ist, kein zusammengesetztes Wort.
+        assert!(p.get("nutzungALKIS").is_some());
+        assert!(p["nutzungALKIS"].is_null());
+        assert!(p.get("nutzungAlkis").is_none());
     }
 
     #[test]

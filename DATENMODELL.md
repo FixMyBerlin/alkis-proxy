@@ -43,6 +43,36 @@ Feld enthält dort etwas anderes: `flurstueckstext` ist die Flurstücksnummer,
 `nenner` ist naturgemäß oft `null` — ein Flurstück „94" hat keinen Nenner, nur
 „94/1" hat einen.
 
+## `nutzungALKIS`: tatsächliche Nutzung aus einer eigenen Ebene
+
+Unabhängig von `nutzung` (oben) über einen zweiten Abruf ermittelt, deshalb
+auch bei mehreren gleichzeitig geltenden Nutzungsarten belegt —
+**semikolongetrennt** (`"Landwirtschaft;Weg"`). Zwei Fälle, siehe
+`src/nutzung/`:
+
+* **Join** (8 Länder: NW, NI, HE, BB, MV, SN, HH, SL) — eine vorverschnittene
+  Ebene `NutzungFlurstueck` trägt `flstkennz` direkt mit, reiner
+  Attribut-Join.
+* **Intersect** (4 Länder: RP, ST, TH, BW) — die Nutzungsebene kennt keinen
+  Flurstücksbezug, die Zuordnung läuft über geometrische Verschneidung.
+
+**Ohne Nutzungsebene**: SH (INSPIRE-Schema kennt keine Nutzung), BE (Dienst
+bietet keine zweite Ebene an), HB (rund zwanzig Einzelobjektarten statt einer
+Sammelklasse), BY (kein Endpunkt).
+
+Die Länder schreiben denselben amtlichen Katalog teils unterschiedlich
+(Thüringen transliteriert und verstümmelt, Saarland transliteriert teilweise)
+— `nutzung::catalog::canonical` harmonisiert das auf eine Schreibweise. Werte
+(live bestätigt, erweiterbar — ein unbekannter Wert kommt roh statt verworfen
+durch):
+
+Bahnverkehr · Fläche besonderer funktionaler Prägung · Fläche gemischter
+Nutzung · Fließgewässer · Flugverkehr · Friedhof · Gehölz · Halde ·
+Industrie- und Gewerbefläche · Landwirtschaft · Platz · Sport-, Freizeit- und
+Erholungsfläche · Stehendes Gewässer · Straßenverkehr · Sumpf ·
+Tagebau/Grube/Steinbruch · Unland/Vegetationslose Fläche · Wald · Weg ·
+Wohnbaufläche
+
 ## Nicht enthalten, in keinem Land
 
 **Eigentümer, Anschrift, Grundbuchblatt und Buchungsstelle** sind

@@ -216,12 +216,44 @@ pub struct Endpoint {
     pub output_format: OutputFormat,
 }
 
+/// Wie die amtliche tatsächliche Nutzung (`nutzungALKIS`) zu einem Flurstück
+/// gehört — siehe `crate::nutzung` für die Umsetzung. Zwei technisch
+/// grundverschiedene Fälle, gegen dieselben Dienste geprüft
+/// (`GetCapabilities`/`DescribeFeatureType`, 2026-09-10):
+///
+/// * **Join**: Der Dienst führt bereits eine vorverschnittene Ebene
+///   (`NutzungFlurstueck`) mit `flstkennz`-Bezug — ein Flurstück kann darin
+///   mehrere Zeilen mit unterschiedlicher `nutzart` haben (Stichprobe NRW:
+///   105 von 244 Flurstücken). Reiner Attribut-Join, keine Geometriearbeit.
+/// * **Intersect**: Der Dienst kennt nur eine lose Nutzungsebene ohne
+///   Flurstücksbezug. Die Zuordnung läuft über eine geometrische
+///   Verschneidung mit dem Flurstück — anders als beim OSM-Abgleich in
+///   `classification` stammen beide Ebenen aber aus derselben amtlichen
+///   Erhebung, ein Versatz wie zwischen ALKIS und OSM entfällt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NutzungMode {
+    Join,
+    Intersect,
+}
+
+/// Endpunkt der Nutzungsebene eines Landes — derselbe Host, dieselbe
+/// Ausgabeform wie der Flurstücks-`Endpoint`, nur ein anderer `TYPENAMES`.
+#[derive(Debug, Clone, Copy)]
+pub struct NutzungEndpoint {
+    pub typename: &'static str,
+    pub mode: NutzungMode,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct StateConfig {
     pub key: StateKey,
     pub label: &'static str,
     /// `None`, solange kein frei zugänglicher Endpunkt bekannt ist.
     pub endpoint: Option<Endpoint>,
+    /// `None`, wenn der Dienst keine amtliche Nutzungsebene anbietet (Berlin,
+    /// Schleswig-Holstein, Bremen — siehe `crate::nutzung` für die Begründung
+    /// je Land) oder noch keine geprüft wurde (Bayern, ohne Endpunkt).
+    pub nutzung: Option<NutzungEndpoint>,
     pub attribution: Option<Attribution>,
     /// Bekannte Eigenheit des Dienstes, für Betrieb und Diagnose.
     pub note: Option<&'static str>,
@@ -243,6 +275,10 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25832,
             output_format: Gml321,
         }),
+        // INSPIRE cp:CadastralParcel kennt keine Nutzung, und der Dienst
+        // bietet neben cp:CadastralZoning (Verwaltungsgliederung, keine
+        // tatsächliche Nutzung) keine weitere Ebene an.
+        nutzung: None,
         attribution: Some(Attribution {
             text: "© GeoBasis-DE/LVermGeo SH/CC BY 4.0",
             url: "https://www.gdi-sh.de",
@@ -259,6 +295,10 @@ pub const STATES: &[StateConfig] = &[
             schema: Ave,
             native_crs: Epsg25832,
             output_format: Gml321,
+        }),
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:NutzungFlurstueck",
+            mode: NutzungMode::Join,
         }),
         attribution: Some(Attribution {
             text: "Freie und Hansestadt Hamburg, Landesbetrieb Geoinformation und Vermessung (LGV)",
@@ -277,6 +317,10 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25832,
             output_format: Gml321,
         }),
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:NutzungFlurstueck",
+            mode: NutzungMode::Join,
+        }),
         attribution: Some(Attribution {
             text: "LGLN ({jahr}) Creative Commons Namensnennung – 4.0 International (CC BY 4.0)",
             url: "https://opendata.lgln.niedersachsen.de",
@@ -294,6 +338,11 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25832,
             output_format: Gml321,
         }),
+        // Läuft über das volle NAS-Schema: keine Sammelklasse „Nutzung",
+        // sondern rund zwanzig einzelne Objektarten (AX_Wohnbauflaeche,
+        // AX_Landwirtschaft, AX_Strassenverkehr, …) — außerhalb des Rahmens
+        // der beiden hier umgesetzten Fälle.
+        nutzung: None,
         attribution: Some(Attribution {
             // Nicht LGLN: Der Dienst läuft zwar auf deren Host, als
             // Rechteinhaber nennt er aber ausdrücklich „GeoBremen".
@@ -313,6 +362,10 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25832,
             output_format: Gml321,
         }),
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:NutzungFlurstueck",
+            mode: NutzungMode::Join,
+        }),
         attribution: Some(Attribution {
             text: "© GeoBasis-DE/NRW",
             url: "https://www.geoportal.nrw",
@@ -329,6 +382,10 @@ pub const STATES: &[StateConfig] = &[
             schema: Ave,
             native_crs: Epsg25832,
             output_format: Gml321,
+        }),
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:NutzungFlurstueck",
+            mode: NutzungMode::Join,
         }),
         attribution: Some(Attribution {
             text: "© GeoBasis-DE/HVBG",
@@ -348,6 +405,11 @@ pub const STATES: &[StateConfig] = &[
             // Der Dienst bewirbt JSON nicht und lehnt es mit einer OGC-Exception ab.
             output_format: Gml321,
         }),
+        // ave:Nutzung ohne Flurstücksbezug — Verschneidung nötig, kein Join.
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:Nutzung",
+            mode: NutzungMode::Intersect,
+        }),
         attribution: Some(Attribution {
             text: "© GeoBasis-DE / LVermGeoRP ({jahr}), dl-de/by-2-0",
             url: "https://www.lvermgeo.rlp.de/geodaten-geoshop/open-data",
@@ -365,6 +427,12 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25832,
             output_format: GeoJson,
         }),
+        // nora:v_al_tatsaechliche_nutzung — eigenes Schema (`objektname` statt
+        // `nutzart`), ohne Flurstücksbezug: Verschneidung nötig.
+        nutzung: Some(NutzungEndpoint {
+            typename: "nora:v_al_tatsaechliche_nutzung",
+            mode: NutzungMode::Intersect,
+        }),
         attribution: Some(Attribution {
             text: "LGL-BW ({jahr}) Datenlizenz Deutschland - Namensnennung - Version 2.0",
             url: "https://www.lgl-bw.de",
@@ -376,6 +444,7 @@ pub const STATES: &[StateConfig] = &[
         key: StateKey::By,
         label: "Bayern",
         endpoint: None,
+        nutzung: None,
         attribution: None,
         note: Some(
             "Kein verifizierter kostenfreier Endpunkt. GeodatenOnline-WFS ist gebührenpflichtig; \
@@ -392,6 +461,13 @@ pub const STATES: &[StateConfig] = &[
             schema: Ave,
             native_crs: Epsg25832,
             output_format: ServerDefault,
+        }),
+        // Wie beim Flurstücks-Endpunkt liefert der ArcGIS-Dienst Großbuchstaben
+        // (FLSTKENNZ, NUTZART) — der GML-Parser normalisiert Feldnamen ohnehin
+        // auf Kleinschreibung, deshalb keine Besonderheit hier.
+        nutzung: Some(NutzungEndpoint {
+            typename: "ALKIS_ALKIS_WFS_ohne_Eig:NutzungFlurstueck",
+            mode: NutzungMode::Join,
         }),
         attribution: Some(Attribution {
             // Der ArcGIS-Dienst liefert weder Fees noch AccessConstraints;
@@ -416,6 +492,9 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25833,
             output_format: GeoJson,
         }),
+        // Der offene WFS bietet ausschließlich alkis_flurstuecke:flurstuecke
+        // an, keine separate Nutzungsebene.
+        nutzung: None,
         attribution: Some(Attribution {
             text: "© GeoBasis-DE/Berlin",
             url: "https://www.berlin.de/sen/sbw/stadtdaten/geoportal/liegenschaftskataster/",
@@ -432,6 +511,10 @@ pub const STATES: &[StateConfig] = &[
             schema: Ave,
             native_crs: Epsg25833,
             output_format: Gml321,
+        }),
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:NutzungFlurstueck",
+            mode: NutzungMode::Join,
         }),
         attribution: Some(Attribution {
             text: "© GeoBasis-DE/LGB, dl-de/by-2-0",
@@ -450,6 +533,10 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25833,
             output_format: Gml321,
         }),
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:NutzungFlurstueck",
+            mode: NutzungMode::Join,
+        }),
         attribution: Some(Attribution {
             text: "© GeoBasis-DE/M-V/CC BY 4.0",
             url: "https://www.laiv-mv.de/Geoinformation/",
@@ -466,6 +553,10 @@ pub const STATES: &[StateConfig] = &[
             schema: Ave,
             native_crs: Epsg25833,
             output_format: Gml321,
+        }),
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:NutzungFlurstueck",
+            mode: NutzungMode::Join,
         }),
         attribution: Some(Attribution {
             text: "GeoSN, dl-de/by-2-0",
@@ -484,6 +575,11 @@ pub const STATES: &[StateConfig] = &[
             native_crs: Epsg25832,
             output_format: Gml321,
         }),
+        // ave:Nutzung ohne NutzungFlurstueck-Ebene — Verschneidung nötig.
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:Nutzung",
+            mode: NutzungMode::Intersect,
+        }),
         attribution: Some(Attribution {
             text: "© GeoBasis-DE / LVermGeo ST, dl-de/by-2-0",
             url: "https://www.lvermgeo.sachsen-anhalt.de/de/gdp-open-data.html",
@@ -500,6 +596,11 @@ pub const STATES: &[StateConfig] = &[
             schema: Ave,
             native_crs: Epsg25832,
             output_format: Gml321,
+        }),
+        // ave:Nutzung ohne NutzungFlurstueck-Ebene — Verschneidung nötig.
+        nutzung: Some(NutzungEndpoint {
+            typename: "ave:Nutzung",
+            mode: NutzungMode::Intersect,
         }),
         attribution: Some(Attribution {
             text: "© GDI-Th, dl-de/by-2-0",
@@ -672,6 +773,37 @@ mod tests {
         assert_eq!(attribution_line(&[], 2026), None);
         // Bayern hat keinen Dienst und damit auch keinen Quellenvermerk.
         assert_eq!(attribution_line(&[StateKey::By], 2026), None);
+    }
+
+    /// Dokumentiert die Aufteilung aus dem Modulkommentar zu `NutzungMode` als
+    /// Test: 8 Länder mit direktem Join, 4 mit Verschneidung, 4 ohne Ebene
+    /// (SH, HB, BE haben einen Dienst, aber keine Nutzungsebene; BY hat gar
+    /// keinen Dienst).
+    #[test]
+    fn nutzungsebenen_sind_wie_geprueft_verteilt() {
+        let join = STATES
+            .iter()
+            .filter(|s| matches!(s.nutzung, Some(n) if n.mode == NutzungMode::Join))
+            .count();
+        let intersect = STATES
+            .iter()
+            .filter(|s| matches!(s.nutzung, Some(n) if n.mode == NutzungMode::Intersect))
+            .count();
+        let ohne = STATES.iter().filter(|s| s.nutzung.is_none()).count();
+        assert_eq!(join, 8, "Join-Länder: NW, NI, HE, BB, MV, SN, HH, SL");
+        assert_eq!(intersect, 4, "Verschneidungs-Länder: RP, BW, ST, TH");
+        assert_eq!(ohne, 4, "ohne Nutzungsebene: SH, HB, BY, BE");
+    }
+
+    /// Jede konfigurierte Nutzungsebene muss zu einem Dienst gehören — eine
+    /// Ebene ohne Flurstücks-Endpunkt könnte nie abgefragt werden.
+    #[test]
+    fn nutzungsebene_setzt_einen_endpunkt_voraus() {
+        for s in STATES {
+            if s.nutzung.is_some() {
+                assert!(s.endpoint.is_some(), "{}: Nutzungsebene ohne Endpunkt", s.label);
+            }
+        }
     }
 
     #[test]

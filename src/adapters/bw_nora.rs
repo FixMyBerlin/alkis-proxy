@@ -24,6 +24,9 @@ pub fn map(raw: &RawFeature, state: StateKey) -> Result<Parcel, AdapterError> {
         kreis_name: None,
         lagebezeichnung: None,
         nutzung: None,
+        // Wird nachträglich vom Upstream-Client über die Verschneidung mit
+        // `nora:v_al_tatsaechliche_nutzung` befüllt — siehe `crate::nutzung`.
+        nutzung_alkis: None,
         flaeche_qm: raw.number(&["amtliche_flaeche"]),
         stand: iso_date(raw.field(&["beginn"])),
         geometry: geometry(raw)?,

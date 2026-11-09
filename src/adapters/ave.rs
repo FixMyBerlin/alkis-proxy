@@ -31,6 +31,8 @@ pub fn map(raw: &RawFeature, state: StateKey) -> Result<Parcel, AdapterError> {
         kreis_name: text(raw, &["kreis"]),
         lagebezeichnung: text(raw, &["lagebeztxt"]),
         nutzung: text(raw, &["tntxt"]),
+        // Wird nachträglich vom Upstream-Client befüllt — siehe `crate::nutzung`.
+        nutzung_alkis: None,
         flaeche_qm: raw.number(&["flaeche", "amtlicheflaeche"]),
         stand: iso_date(raw.field(&["aktualit", "beginnt"])),
         geometry: geometry(raw)?,

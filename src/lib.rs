@@ -10,6 +10,7 @@ pub mod classification;
 pub mod config;
 pub mod crs;
 pub mod model;
+pub mod nutzung;
 pub mod parse;
 pub mod routing;
 pub mod upstream;

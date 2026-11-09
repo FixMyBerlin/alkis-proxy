@@ -27,6 +27,7 @@ pub fn map(raw: &RawFeature, state: StateKey) -> Result<Parcel, AdapterError> {
         kreis_name: None,
         lagebezeichnung: text(raw, &["label"]),
         nutzung: None,
+        nutzung_alkis: None,
         flaeche_qm: raw.number(&["areavalue"]),
         stand: iso_date(raw.field(&["beginlifespanversion", "validfrom"])),
         geometry: geometry(raw)?,

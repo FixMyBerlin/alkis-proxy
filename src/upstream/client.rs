@@ -7,10 +7,11 @@
 use std::time::Duration;
 
 use crate::adapters;
-use crate::config::StateConfig;
+use crate::config::{Endpoint, StateConfig};
 use crate::crs::reproject::{geometry_to_wgs84, Bbox};
 use crate::model::Parcel;
-use crate::parse::{parse_geojson, parse_gml};
+use crate::nutzung::NutzungIndex;
+use crate::parse::{parse_geojson, parse_gml, RawFeature};
 use crate::upstream::fetch::{build_get_feature_url, UpstreamError};
 
 /// Ergebnis eines Kachelabrufs.
@@ -50,7 +51,49 @@ impl UpstreamClient {
         let code = state.key.code();
         let endpoint = state.endpoint.ok_or(UpstreamError::NoEndpoint { state: code })?;
 
-        let url = build_get_feature_url(&endpoint, bbox, count);
+        // Beide Abrufe laufen parallel: unabhängige Anfragen an denselben
+        // Dienst, ein sequenzielles Warten würde die Latenz bei einem
+        // Cache-Fehlschlag ohne Grund verdoppeln.
+        let (raws, nutzung_raws) = tokio::join!(
+            self.fetch_raw(code, &endpoint, bbox, count),
+            self.fetch_nutzung_raw(state, &endpoint, bbox, count),
+        );
+        let raws = raws?;
+        let truncated = raws.len() >= count;
+        let nutzung_index = NutzungIndex::build(state, endpoint.schema, nutzung_raws);
+
+        let mut parcels = Vec::with_capacity(raws.len());
+        for raw in &raws {
+            match adapters::map(endpoint.schema, raw, state.key) {
+                Ok(mut parcel) => {
+                    parcel.nutzung_alkis = nutzung_index.nutzung_alkis(raw);
+                    // Ab hier ist alles WGS84 — auch im Cache, damit ein Treffer
+                    // ohne weitere Rechenarbeit ausgeliefert werden kann.
+                    geometry_to_wgs84(&mut parcel.geometry, endpoint.native_crs);
+                    parcels.push(parcel);
+                }
+                Err(e) => {
+                    // Ein einzelnes unbrauchbares Feature darf die Kachel nicht
+                    // scheitern lassen — das passiert bei Schema-Drift, und ein
+                    // Teilergebnis ist besser als gar keins.
+                    tracing::warn!(state = code, error = %e, "Feature übersprungen");
+                }
+            }
+        }
+
+        Ok(TileResult { parcels, truncated })
+    }
+
+    /// Holt die Rohfeatures eines Typs über GetFeature — gemeinsamer HTTP- und
+    /// Parse-Pfad für Flurstücke und (falls konfiguriert) die Nutzungsebene.
+    async fn fetch_raw(
+        &self,
+        code: &'static str,
+        endpoint: &Endpoint,
+        bbox: Bbox,
+        count: usize,
+    ) -> Result<Vec<RawFeature>, UpstreamError> {
+        let url = build_get_feature_url(endpoint, bbox, count);
         let response = self.http.get(&url).send().await.map_err(|e| {
             if e.is_timeout() {
                 UpstreamError::Timeout {
@@ -82,39 +125,53 @@ impl UpstreamClient {
         // JSON-Anfrage), und bei ServerDefault ist es ohnehin offen.
         // Fehler kommen dabei häufig mit HTTP 200 als OGC-Exception; die Parser
         // erkennen das und melden es hier weiter.
-        let raws = if body.trim_start().starts_with('<') {
+        if body.trim_start().starts_with('<') {
             parse_gml(&body).map_err(|e| UpstreamError::Unparsable {
                 state: code,
                 message: e.to_string(),
-            })?
+            })
         } else {
             parse_geojson(&body).map_err(|e| UpstreamError::Unparsable {
                 state: code,
                 message: e.to_string(),
-            })?
-        };
-
-        let truncated = raws.len() >= count;
-
-        let mut parcels = Vec::with_capacity(raws.len());
-        for raw in &raws {
-            match adapters::map(endpoint.schema, raw, state.key) {
-                Ok(mut parcel) => {
-                    // Ab hier ist alles WGS84 — auch im Cache, damit ein Treffer
-                    // ohne weitere Rechenarbeit ausgeliefert werden kann.
-                    geometry_to_wgs84(&mut parcel.geometry, endpoint.native_crs);
-                    parcels.push(parcel);
-                }
-                Err(e) => {
-                    // Ein einzelnes unbrauchbares Feature darf die Kachel nicht
-                    // scheitern lassen — das passiert bei Schema-Drift, und ein
-                    // Teilergebnis ist besser als gar keins.
-                    tracing::warn!(state = code, error = %e, "Feature übersprungen");
-                }
-            }
+            })
         }
+    }
 
-        Ok(TileResult { parcels, truncated })
+    /// Holt die Rohfeatures der Nutzungsebene derselben Kachel, falls das Land
+    /// eine konfiguriert hat — leer, wenn nicht konfiguriert oder der Abruf
+    /// fehlschlägt.
+    ///
+    /// Ein Fehlschlag lässt die Kachel nicht scheitern: `nutzungALKIS` ist
+    /// eine Anreicherung, kein Pflichtfeld — bei einem nicht erreichbaren
+    /// Nutzungsdienst bleiben die Flurstücke der Kachel einfach unangereichert.
+    ///
+    /// Angefragt wird mit einem Vielfachen von `count`: Eine
+    /// `NutzungFlurstueck`-Antwort enthält pro Flurstück potenziell mehrere
+    /// Zeilen (Stichprobe NRW: ~2 je Flurstück), ohne den Puffer würde die
+    /// Nutzungsebene früher abgeschnitten als die Flurstücksebene selbst.
+    async fn fetch_nutzung_raw(
+        &self,
+        state: &StateConfig,
+        endpoint: &Endpoint,
+        bbox: Bbox,
+        count: usize,
+    ) -> Vec<RawFeature> {
+        let Some(cfg) = state.nutzung else { return Vec::new() };
+        let code = state.key.code();
+        let nutzung_endpoint = Endpoint { typename: cfg.typename, ..*endpoint };
+
+        self.fetch_raw(code, &nutzung_endpoint, bbox, count.saturating_mul(3))
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    state = code,
+                    typename = cfg.typename,
+                    error = %e,
+                    "Nutzungsebene nicht abrufbar, nutzungALKIS bleibt für diese Kachel leer"
+                );
+                Vec::new()
+            })
     }
 }
 

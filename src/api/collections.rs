@@ -72,7 +72,10 @@ fn base_queryable_properties() -> Value {
         "gemeindeName": text("Gemeinde"),
         "kreisName": text("Kreis"),
         "lagebezeichnung": text("Lagebezeichnung"),
-        "nutzung": text("Tatsächliche Nutzung"),
+        "nutzung": text("Tatsächliche Nutzung, so wie sie in der Flurstücksantwort selbst steht — ein Wert, in elf Ländern belegt"),
+        "nutzungALKIS": text("Amtliche tatsächliche Nutzung aus einer eigenen ALKIS-Nutzungsebene, unabhängig von `nutzung` ermittelt. \
+              Bei mehreren gleichzeitig geltenden Nutzungsarten semikolongetrennt (z. B. \"Landwirtschaft;Weg\"). \
+              Belegt in 12 der 15 angebundenen Länder — nicht verfügbar in SH, HB, BE."),
         "stand": text("Stand der Daten (ISO-Datum)")
     })
 }

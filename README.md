@@ -168,10 +168,18 @@ eintragen. Lädt einmalig, dafür ohne Nachladen beim Zoomen.
     "kreisName": "Köln",
     "lagebezeichnung": "Marspfortengasse 6",
     "nutzung": "Fläche gemischter Nutzung",
+    "nutzungALKIS": "Fläche gemischter Nutzung",
     "stand": "2013-02-22"
   }
 }
 ```
+
+`nutzungALKIS` kommt aus einer eigenen, zusätzlich abgerufenen ALKIS-Ebene
+(nicht aus `nutzung`), auf einheitliche Schreibweise gebracht, und trägt bei
+mehreren gleichzeitig geltenden Nutzungsarten mehrere Werte,
+semikolongetrennt — z. B. `"Landwirtschaft;Weg"`. Belegt in 12 der 15
+angebundenen Länder, Details in
+[DATENMODELL.md](DATENMODELL.md#nutzungalkis-tatsächliche-nutzung-aus-einer-eigenen-ebene).
 
 Welche Felder in welchem Land belegt sind, welche Angaben in keinem Dienst
 enthalten sind und was die Adapter bewusst verwerfen, steht in [DATENMODELL.md](DATENMODELL.md).
@@ -321,10 +329,15 @@ Cache arbeitet deshalb auf einem 1-km-Raster im nativen CRS. Antworten, die
 exakt am Abrufslimit liegen, gelten als abgeschnitten — solche Kacheln werden
 geviertelt, und diese Erkenntnis wird mitgespeichert.
 
+**`nutzungALKIS` als zweiter Abruf pro Kachel.** In den 12 Ländern mit
+Nutzungsebene fragt jede Kachel zusätzlich diese Ebene ab; schlägt der Abruf
+fehl, bleibt nur `nutzungALKIS` leer, die Flurstücke liefert der Dienst
+trotzdem aus. Details in [DATENMODELL.md](DATENMODELL.md#nutzungalkis-tatsächliche-nutzung-aus-einer-eigenen-ebene).
+
 ## Entwicklung
 
 ```bash
-cargo test                    # 108 Unit- + 8 Integrationstests
+cargo test                    # 195 Unit- + 8 Integrationstests
 cargo run --example demo      # Harmonisierung an echten Fixtures
 cargo run --example live      # alle Landesdienste live prüfen
 ```
